@@ -19,7 +19,7 @@ Author: Optimized version
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import filedialog, messagebox
 import os
 import json
 import time
@@ -27,7 +27,9 @@ import gc
 from datetime import datetime
 from PIL import Image, ImageTk
 import cv2
-import numpy as np
+
+# Import temporal analysis functionality
+from temporal_analysis_complete import TemporalAnalysisGenerator
 
 # Constants
 class Constants:
@@ -161,6 +163,9 @@ class VideoSegmentEditor:
         self.loadingAnimationTimer = None
         self.loadingDots = 0
         
+        # Initialize temporal analysis generator
+        self.temporal_generator = TemporalAnalysisGenerator()
+        
     def _bind_events(self):
         """Bind keyboard events"""
         self.root.bind('<Key>', self.onKeyPress)
@@ -283,7 +288,7 @@ class VideoSegmentEditor:
         centerFrame.pack(expand=True)
         
         # Move Back buttons
-        self.move640Back = tk.Button(centerFrame, text="← 640", command=self.moveSegment640Back,
+        self.move640Back = tk.Button(centerFrame, text="←← 640", command=self.moveSegment640Back,
                 bg='#455a64', fg='white', font=('Arial', 12, 'bold'), width=8, height=3, state='disabled')
         self.move640Back.pack(side=tk.LEFT, padx=8)
         self.move64Back = tk.Button(centerFrame, text="← 64", command=self.moveSegment64Back,
@@ -308,7 +313,7 @@ class VideoSegmentEditor:
         self.move64Forward = tk.Button(centerFrame, text="64 →", command=self.moveSegment64Forward,
                 bg='#607d8b', fg='white', font=('Arial', 12, 'bold'), width=8, height=3, state='disabled')
         self.move64Forward.pack(side=tk.LEFT, padx=8)
-        self.move640Forward =tk.Button(centerFrame, text="640 →", command=self.moveSegment640Forward,
+        self.move640Forward =tk.Button(centerFrame, text="640 →→", command=self.moveSegment640Forward,
                 bg='#455a64', fg='white', font=('Arial', 12, 'bold'), width=8, height=3, state='disabled')
         self.move640Forward.pack(side=tk.LEFT, padx=8)
         
@@ -1204,11 +1209,95 @@ class VideoSegmentEditor:
             if self.currentVideoFile not in self.annotations:
                 self.annotations[self.currentVideoFile] = {}
             
-            # Save to file in YOLO format
-            self.saveAnnotationsToFile()
+            # Create segment key
+            segment_key = f"frames_{self.segmentStart:06d}_{self.segmentEnd:06d}"
+            
+            # Store annotation data
+            self.annotations[self.currentVideoFile][segment_key] = {
+                "start_frame": self.segmentStart,
+                "end_frame": self.segmentEnd,
+                "has_smoke": has_smoke,
+                "timestamp": datetime.now().isoformat(),
+                "frame_count": self.segmentEnd - self.segmentStart + 1
+            }
+            
+            # Save ONLY the current segment (not all segments)
+            self.saveCurrentSegmentOnly(has_smoke, segment_key)
             
         except Exception as e:
             print(f"Error saving annotation: {e}")
+            
+    def saveCurrentSegmentOnly(self, has_smoke, segment_key):
+        """Save only the current segment annotation and temporal analysis"""
+        try:
+            # Use the program directory instead of video directory
+            program_dir = os.path.dirname(os.path.abspath(__file__))
+            video_name = os.path.splitext(os.path.basename(self.currentVideoFile))[0] if self.currentVideoFile else "annotations"
+            
+            # Create a centralized output directory for all YOLO annotations in program folder
+            central_yolo_dir = os.path.join(program_dir, "smoke_detection_annotations")
+            images_dir = os.path.join(central_yolo_dir, "images")
+            labels_dir = os.path.join(central_yolo_dir, "labels")
+            
+            for directory in [central_yolo_dir, images_dir, labels_dir]:
+                if not os.path.exists(directory):
+                    os.makedirs(directory)
+            
+            # Create unique filename with video name prefix
+            unique_segment_key = f"{video_name}_{segment_key}"
+            
+            # Generate and save temporal analysis image (192x192) for CURRENT segment only
+            self.saveSegmentTemporalAnalysis(self.segmentStart, self.segmentEnd, unique_segment_key, images_dir)
+            
+            # Create YOLO format label file for CURRENT segment only
+            label_file = os.path.join(labels_dir, f"{unique_segment_key}.txt")
+            
+            with open(label_file, 'w') as f:
+                if has_smoke:
+                    f.write("0 0.5 0.5 1.0 1.0\n")
+                else:
+                    f.write("1 0.5 0.5 1.0 1.0\n")
+            
+            # Update summary file with only current segment
+            self.updateSummaryFileWithCurrentSegment(central_yolo_dir, unique_segment_key, has_smoke)
+            
+            # Update class names file (only if it doesn't exist)
+            classes_file = os.path.join(central_yolo_dir, "classes.txt")
+            if not os.path.exists(classes_file):
+                with open(classes_file, 'w') as f:
+                    f.write("smoke\n")
+                    f.write("no_smoke\n")
+            
+            print(f"✅ Saved ONLY current segment: {unique_segment_key}")
+            print(f"📁 Saved to: {images_dir}")
+            
+        except Exception as e:
+            print(f"Error saving current segment: {e}")
+            
+    def updateSummaryFileWithCurrentSegment(self, central_yolo_dir, unique_segment_key, has_smoke):
+        """Update summary file with only the current segment"""
+        try:
+            summary_file = os.path.join(central_yolo_dir, "all_annotations_summary.json")
+            
+            # Load existing annotations if file exists
+            all_annotations = {}
+            if os.path.exists(summary_file):
+                try:
+                    with open(summary_file, 'r') as f:
+                        all_annotations = json.load(f)
+                except:
+                    all_annotations = {}
+            
+            # Add/update only current video's annotations
+            if self.currentVideoFile:
+                all_annotations[self.currentVideoFile] = self.annotations[self.currentVideoFile]
+            
+            # Save updated summary
+            with open(summary_file, 'w') as f:
+                json.dump(all_annotations, f, indent=2)
+                
+        except Exception as e:
+            print(f"Error updating summary file: {e}")
             
     def saveAnnotationsToFile(self):
         """Save all annotations to YOLO format text files in a centralized folder"""
@@ -1226,17 +1315,18 @@ class VideoSegmentEditor:
                 if not os.path.exists(directory):
                     os.makedirs(directory)
             
-            # Save each segment as YOLO annotation and corresponding image
+            # Save each segment as YOLO annotation and corresponding temporal analysis image
             if self.currentVideoFile in self.annotations:
                 for segment_key, annotation in self.annotations[self.currentVideoFile].items():
+                    start_frame = annotation["start_frame"]
                     end_frame = annotation["end_frame"]
                     has_smoke = annotation["has_smoke"]
                     
                     # Create unique filenames with video name prefix
                     unique_segment_key = f"{video_name}_{segment_key}"
                     
-                    # Save the last frame of the segment as the representative image
-                    self.saveSegmentFrame(end_frame, unique_segment_key, images_dir)
+                    # Generate and save temporal analysis image (192x192) instead of single frame
+                    self.saveSegmentTemporalAnalysis(start_frame, end_frame, unique_segment_key, images_dir)
                     
                     # Create YOLO format label file
                     label_file = os.path.join(labels_dir, f"{unique_segment_key}.txt")
@@ -1274,12 +1364,18 @@ class VideoSegmentEditor:
             # Create a simple dataset info file
             dataset_info_file = os.path.join(central_yolo_dir, "dataset_info.txt")
             with open(dataset_info_file, 'w') as f:
-                f.write("Smoke Detection YOLO Dataset\n")
-                f.write("="*40 + "\n\n")
+                f.write("Smoke Detection YOLO Dataset - Temporal Analysis\n")
+                f.write("="*50 + "\n\n")
                 f.write("Directory Structure:\n")
-                f.write("- images/: Contains frame images from video segments\n")
+                f.write("- images/: Contains 192x192 temporal analysis images from 64-frame segments\n")
                 f.write("- labels/: Contains YOLO format annotation files\n")
-                f.write("- classes.txt: Class names (smoke)\n")
+                f.write("- classes.txt: Class names (smoke, no_smoke)\n\n")
+                f.write("Image Format:\n")
+                f.write("- Size: 192x192 pixels\n")
+                f.write("- Type: Temporal saturation analysis (grayscale)\n")
+                f.write("- Source: 64 consecutive video frames per image\n")
+                f.write("- Grid: 3x3 regions with 40% coverage and 20% overlap\n")
+                f.write("- Each cell: 64x64 pixels representing temporal saturation histogram\n\n")
                 f.write("YOLO Format:\n")
                 f.write("- Class 0: smoke\n")
                 f.write("- Class 1: no_smoke\n")
@@ -1312,20 +1408,66 @@ class VideoSegmentEditor:
         except Exception as e:
             print(f"Error saving YOLO annotations: {e}")
             
+    def saveSegmentTemporalAnalysis(self, start_frame, end_frame, unique_segment_key, images_dir):
+        """Generate and save temporal analysis image from 64-frame segment"""
+        try:
+            print(f"Generating temporal analysis for frames {start_frame}-{end_frame}...")
+            
+            # Load all 64 frames from the segment
+            frames = []
+            for frame_num in range(start_frame, end_frame + 1):
+                if frame_num in self.frameCache:
+                    # Use cached frame if available
+                    frame = self.frameCache[frame_num]
+                else:
+                    # Load frame from video
+                    self.videoCap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+                    ret, frame = self.videoCap.read()
+                    if not ret:
+                        print(f"Warning: Could not read frame {frame_num}, using previous frame")
+                        if frames:  # Use last successful frame if available
+                            frame = frames[-1].copy()
+                        else:
+                            print(f"Error: No frames available for temporal analysis")
+                            return
+                
+                frames.append(frame)
+            
+            print(f"Loaded {len(frames)} frames for temporal analysis")
+            
+            # Generate temporal analysis image (192x192)
+            temporal_image = self.temporal_generator.generate_from_frames(frames)
+            
+            # Save temporal analysis image
+            image_path = os.path.join(images_dir, f"{unique_segment_key}.png")
+            success = cv2.imwrite(image_path, temporal_image)
+            
+            if success:
+                print(f"Saved temporal analysis image: {image_path}")
+                print(f"Image dimensions: {temporal_image.shape}")
+            else:
+                print(f"Error: Failed to save temporal analysis image to {image_path}")
+                
+        except Exception as e:
+            print(f"Error generating temporal analysis for segment {start_frame}-{end_frame}: {e}")
+            # Fallback: save the last frame as before
+            self.saveSegmentFrame(end_frame, unique_segment_key, images_dir)
+            
     def saveSegmentFrame(self, frame_number, unique_segment_key, images_dir):
-        """Save a specific frame as an image file with unique naming"""
+        """Fallback method: Save a specific frame as an image file with unique naming"""
         try:
             # Read the frame
             self.videoCap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
             ret, frame = self.videoCap.read()
             
             if ret:
-                # Save as JPEG image with unique name
-                image_path = os.path.join(images_dir, f"{unique_segment_key}.jpg")
+                # Save as PNG image with unique name (fallback)
+                image_path = os.path.join(images_dir, f"{unique_segment_key}_fallback.png")
                 cv2.imwrite(image_path, frame)
+                print(f"Saved fallback frame image: {image_path}")
                 
         except Exception as e:
-            print(f"Error saving frame {frame_number}: {e}")
+            print(f"Error saving fallback frame {frame_number}: {e}")
             
     def __del__(self):
         """Destructor to ensure proper cleanup"""
