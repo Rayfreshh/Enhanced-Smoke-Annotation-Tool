@@ -267,7 +267,7 @@ class TemporalAnalysisGenerator:
         # Process each region independently for optimal AI training
         all_processed_regions = []
         
-        logger.debug(f"Processing {len(validated_regions)} regions - independent normalization for maximum contrast per region")
+        logger.debug(f"Processing {len(validated_regions)} regions - saturation-preserving normalization to prevent artificial brightness")
         
         for i, region_history in enumerate(validated_regions):
             try:
@@ -290,7 +290,7 @@ class TemporalAnalysisGenerator:
                 zero_array = np.zeros((self.temporal_length, self.num_bins), dtype=np.float64)
                 all_processed_regions.append(zero_array)
         
-        # Apply independent normalization per region - each region treated as separate temporal data
+        # Apply saturation-preserving normalization - each region treated as separate temporal data
         for i, region_raw in enumerate(all_processed_regions):
             try:
                 # Calculate grid position (3x3)
@@ -303,28 +303,15 @@ class TemporalAnalysisGenerator:
                 x_start = col * region_size 
                 x_end = x_start + region_size
                 
-                # Apply INDEPENDENT normalization per region for maximum contrast
-                # Each region is treated as a separate temporal data source
-                region_min = region_raw.min()
-                region_max = region_raw.max()
+                # Apply SATURATION-PRESERVING normalization per region
+                # Instead of stretching each region to full range, preserve actual saturation levels
+                # This prevents black frames from creating artificial bright pixels on the right
                 
-                if not np.isfinite(region_max) or not np.isfinite(region_min):
-                    logger.warning(f"Region {i+1}: Invalid range min={region_min}, max={region_max}, using fallback")
-                    # Use uniform fallback values
-                    region_normalized = np.full(region_raw.shape, 128, dtype=np.float64)  # Mid-gray fallback
-                elif region_max == region_min:
-                    # Handle uniform regions: if all values are the same
-                    if region_max > 0:
-                        logger.debug(f"Region {i+1}: Uniform region (all values = {region_max:.6f}), setting to 255")
-                        region_normalized = np.ones(region_raw.shape, dtype=np.float64)  # All 255
-                    else:
-                        logger.debug(f"Region {i+1}: Empty region (all zeros), keeping as 0")
-                        region_normalized = np.zeros(region_raw.shape, dtype=np.float64)  # All 0
-                else:
-                    # Normal case: normalize so min->0, max->255 (each region uses full dynamic range)
-                    region_normalized = (region_raw - region_min) / (region_max - region_min)
+                # Option 1: Use actual saturation values (0-1 range) directly
+                # Scale to 0-255 based on actual saturation levels, not min-max stretching
+                region_normalized = np.clip(region_raw, 0.0, 1.0)  # Ensure 0-1 range
                 
-                # Convert to uint8 - each region independently normalized
+                # Convert to uint8 - preserves actual saturation relationships
                 region_uint8 = (region_normalized * 255).astype(np.uint8)
 
                 # DIMENSION VALIDATION AND PADDING/CLAMPING
@@ -362,15 +349,14 @@ class TemporalAnalysisGenerator:
                 # No resize needed - data is already exactly 64x64
                 region_resized = region_padded
                 
-                # Debug: Verify independent region normalization
+                # Debug: Verify saturation-preserving normalization
                 max_val = np.max(region_resized)
                 min_val = np.min(region_resized)
                 original_min = region_raw.min() if region_raw.size > 0 else 0
                 original_max = region_raw.max() if region_raw.size > 0 else 0
-                dynamic_range = max_val - min_val
-                logger.debug(f"Region {i+1}: final_range={min_val}-{max_val}, dynamic_range={dynamic_range}")
-                logger.debug(f"Region {i+1}: original_range={original_min:.6f}-{original_max:.6f}")
-                logger.debug(f"Region {i+1}: independent_normalization=True, uses_full_contrast={max_val==255 or original_max==original_min}")
+                logger.debug(f"Region {i+1}: final_range={min_val}-{max_val}")
+                logger.debug(f"Region {i+1}: original_saturation_range={original_min:.6f}-{original_max:.6f}")
+                logger.debug(f"Region {i+1}: saturation_preserving=True, no_artificial_stretching=True")
                 logger.debug(f"Region {i+1}: final_shape={region_padded.shape}, expected={expected_shape}")
                 
                 # Place in grid using safe indexing (never exceeds bounds)
@@ -385,7 +371,7 @@ class TemporalAnalysisGenerator:
                 x_end = x_start + region_size
                 output_image[y_start:y_end, x_start:x_end] = 0
         
-        logger.info("Generated 192x192 temporal analysis grid - independent region normalization for maximum pattern visibility")
+        logger.info("Generated 192x192 temporal analysis grid - saturation-preserving normalization prevents artificial brightness")
         return output_image
     
     def generate_from_frames(self, frames: List[np.ndarray]) -> np.ndarray:
