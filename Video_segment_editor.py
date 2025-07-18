@@ -145,6 +145,9 @@ class VideoSegmentEditor:
         self.segmentWatched = False
         self.lastFrame = None
         
+        # Load existing annotations from saved file
+        self.loadExistingAnnotations()
+        
     def _init_gui_state(self):
         """Initialize GUI state properties"""
         self.workflowState = "selection"
@@ -166,9 +169,84 @@ class VideoSegmentEditor:
         # Initialize temporal analysis generator
         self.temporal_generator = TemporalAnalysisGenerator()
         
+        # Initialize temporal analysis variables
+        self.temporalCanvas = None
+        self.temporalInfoLabel = None
+        self.analysisDetailsLabel = None
+        self.currentTemporalImage = None  # Keep reference to prevent GC
+        self.currentTemporalImageData = None  # Store image data for resize events
+        
+        # Store original font sizes for scaling
+        self.originalFontSizes = {
+            'default': 10,
+            'button': 9,
+            'label': 9,
+            'entry': 9
+        }
+        self.currentScaleFactor = 1.0
+        self.scalableWidgets = []  # Track widgets for font scaling
+        
+    def loadExistingAnnotations(self):
+        """Load existing annotations from the summary file if it exists"""
+        try:
+            program_dir = os.path.dirname(os.path.abspath(__file__))
+            summary_file = os.path.join(program_dir, "smoke_detection_annotations", "all_annotations_summary.json")
+            
+            if os.path.exists(summary_file):
+                with open(summary_file, 'r') as f:
+                    saved_annotations = json.load(f)
+                    
+                # Load the saved annotations and enrich them with missing fields
+                self.annotations = saved_annotations
+                self.enrichAnnotationData()
+                
+                print(f"Loaded annotations for {len(self.annotations)} video(s)")
+                
+                # Count total annotations for info
+                total_annotations = sum(len(segments) for segments in self.annotations.values())
+                print(f"Total annotations loaded: {total_annotations}")
+                
+            else:
+                print("No existing annotations file found")
+                
+        except Exception as e:
+            print(f"Error loading existing annotations: {e}")
+            # Keep empty annotations dict if loading fails
+            self.annotations = {}
+    
+    def enrichAnnotationData(self):
+        """Enrich loaded annotation data with missing fields for compatibility"""
+        try:
+            for video_file, segments in self.annotations.items():
+                for segment_key, annotation in segments.items():
+                    # Add missing fields if they don't exist
+                    if 'video_file' not in annotation:
+                        annotation['video_file'] = video_file
+                    if 'video_name' not in annotation:
+                        annotation['video_name'] = os.path.basename(video_file)
+                    if 'segment_duration' not in annotation:
+                        frame_count = annotation.get('frame_count', 64)
+                        annotation['segment_duration'] = frame_count / 25.0  # Default FPS assumption
+                    if 'start_time' not in annotation:
+                        start_frame = annotation.get('start_frame', 0)
+                        annotation['start_time'] = self._frame_to_time_static(start_frame, 25.0)
+                    if 'end_time' not in annotation:
+                        end_frame = annotation.get('end_frame', 63)
+                        annotation['end_time'] = self._frame_to_time_static(end_frame, 25.0)
+        except Exception as e:
+            print(f"Error enriching annotation data: {e}")
+    
+    def _frame_to_time_static(self, frame, fps):
+        """Convert frame number to time format (static version for enrichment)"""
+        seconds = frame / fps
+        minutes = int(seconds // 60)
+        seconds = int(seconds % 60)
+        return f"{minutes}:{seconds:02d}"
+        
     def _bind_events(self):
         """Bind keyboard events"""
         self.root.bind('<Key>', self.onKeyPress)
+        self.root.bind('<Configure>', self.onWindowResize)
         self.root.focus_set()
         
     def _handle_error(self, error_msg, exception=None):
@@ -212,22 +290,22 @@ class VideoSegmentEditor:
         """Setup the main GUI layout"""
         # Main container
         mainFrame = tk.Frame(self.root, bg=Constants.COLORS['bg_dark'])
-        mainFrame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        mainFrame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # Title
-        titleLabel = tk.Label(mainFrame, text="Smoke detection - Annotation tool", 
-                              font=('Arial', 20, 'bold'), 
+        titleLabel = tk.Label(mainFrame, text="Smoke Detection - Annotation Tool", 
+                              font=('TkDefaultFont', 16, 'bold'), 
                               bg=Constants.COLORS['bg_dark'], 
                               fg=Constants.COLORS['text_white'])
-        titleLabel.pack(pady=(0, 15))
+        titleLabel.pack(pady=(0, 10))
         
-        # Main content area - horizontal split
-        contentFrame = tk.Frame(mainFrame, bg=Constants.COLORS['bg_dark'])
-        contentFrame.pack(fill=tk.BOTH, expand=True)
+        # Create main paned window for resizable sections
+        self.mainPanedWindow = tk.PanedWindow(mainFrame, orient=tk.HORIZONTAL, bg=Constants.COLORS['bg_dark'], 
+                                             sashwidth=8, sashrelief=tk.RAISED)
+        self.mainPanedWindow.pack(fill=tk.BOTH, expand=True)
         
-        # Left side - Video and timeline
-        leftFrame = tk.Frame(contentFrame, bg=Constants.COLORS['bg_dark'])
-        leftFrame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 10))
+        # Left side - Video and timeline (larger now)
+        leftFrame = tk.Frame(self.mainPanedWindow, bg=Constants.COLORS['bg_dark'])
         
         # Top section - Video display
         self.setupVideoDisplay(leftFrame)
@@ -235,13 +313,32 @@ class VideoSegmentEditor:
         # Middle section - Timeline and controls
         self.setupTimelineControls(leftFrame)
         
-        # Right side - Control panels
-        rightFrame = tk.Frame(contentFrame, bg=Constants.COLORS['bg_dark'], width=600)
-        rightFrame.pack(side=tk.RIGHT, fill=tk.Y)
-        rightFrame.pack_propagate(False)
+        # Right side - Control panels and temporal analysis
+        rightFrame = tk.Frame(self.mainPanedWindow, bg=Constants.COLORS['bg_dark'])
         
-        # Bottom section - Control panels on right
-        self.setupControlPanels(rightFrame)
+        # Create vertical paned window for right side
+        self.rightPanedWindow = tk.PanedWindow(rightFrame, orient=tk.VERTICAL, bg=Constants.COLORS['bg_dark'],
+                                              sashwidth=6, sashrelief=tk.RAISED)
+        self.rightPanedWindow.pack(fill=tk.BOTH, expand=True)
+        
+        # Control panels on top right
+        controlFrame = tk.Frame(self.rightPanedWindow, bg=Constants.COLORS['bg_dark'])
+        self.setupControlPanels(controlFrame)
+        
+        # Temporal analysis display on bottom right
+        temporalFrame = tk.Frame(self.rightPanedWindow, bg=Constants.COLORS['bg_dark'])
+        self.setupTemporalAnalysisDisplay(temporalFrame)
+        
+        # Add frames to paned windows
+        self.mainPanedWindow.add(leftFrame, minsize=800, width=1000)
+        self.mainPanedWindow.add(rightFrame, minsize=400, width=600)
+        
+        # Make annotation panel smaller and non-resizable, temporal analysis gets more space
+        self.rightPanedWindow.add(controlFrame, minsize=150, height=250)
+        self.rightPanedWindow.add(temporalFrame, minsize=300, height=500)
+        
+        # Disable resizing for the control frame (annotation panel)
+        self.rightPanedWindow.paneconfigure(controlFrame, minsize=250, height=250)
         
     def setupVideoDisplay(self, parent):
         """Setup video display area"""
@@ -249,37 +346,45 @@ class VideoSegmentEditor:
         videoFrame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         # Video info bar
-        infoBar = tk.Frame(videoFrame, bg='#3b3b3b', height=40)
+        infoBar = tk.Frame(videoFrame, bg='#3b3b3b', height=35)
         infoBar.pack(fill=tk.X, padx=10, pady=5)
         infoBar.pack_propagate(False)
         
-        # File load button
-        self.loadBtn = tk.Button(infoBar, text="Load Video File", command=self.loadVideoFile,
+        # File load button and history button
+        buttonFrame = tk.Frame(infoBar, bg='#3b3b3b')
+        buttonFrame.pack(side=tk.LEFT)
+        
+        self.loadBtn = tk.Button(buttonFrame, text="Load Video", command=self.loadVideoFile,
                                 bg=Constants.COLORS['button_green'], fg=Constants.COLORS['text_white'], 
-                                font=('Arial', 12, 'bold'), width=15, height=2)
-        self.loadBtn.pack(side=tk.LEFT, padx=(0, 10))
+                                font=('TkDefaultFont', 10, 'bold'), width=12, height=1)
+        self.loadBtn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        self.historyBtn = tk.Button(buttonFrame, text="History", command=self.showHistoryMenu,
+                                   bg=Constants.COLORS['button_blue'], fg=Constants.COLORS['text_white'], 
+                                   font=('TkDefaultFont', 10, 'bold'), width=10, height=1)
+        self.historyBtn.pack(side=tk.LEFT)
         
         # Video info labels
         self.videoInfoLabel = tk.Label(infoBar, text="No video loaded", 
-                                      bg='#3b3b3b', fg='white', font=('Arial', 12))
+                                      bg='#3b3b3b', fg='white', font=('TkDefaultFont', 10))
         self.videoInfoLabel.pack(side=tk.LEFT, padx=10)
         
         self.frameInfoLabel = tk.Label(infoBar, text="Frame: 0/0", 
-                                      bg='#3b3b3b', fg='lightgray', font=('Arial', 12))
+                                      bg='#3b3b3b', fg='lightgray', font=('TkDefaultFont', 10))
         self.frameInfoLabel.pack(side=tk.RIGHT, padx=10)
         
-        # Video canvas
-        self.videoCanvas = tk.Canvas(videoFrame, bg='black', width=700, height=400)
+        # Video canvas - much larger now
+        self.videoCanvas = tk.Canvas(videoFrame, bg='black', width=900, height=500)
         self.videoCanvas.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
         
         # Loading indicator label (initially hidden)
         self.loadingLabel = tk.Label(videoFrame, text="Loading segment frames", 
                                     bg='black', fg='#4caf50', 
-                                    font=('Arial', 16, 'bold'))
+                                    font=('TkDefaultFont', 14, 'bold'))
         self.loadingLabel.place_forget()  # Hide initially
         
         # Video control buttons under the canvas
-        videoControlsFrame = tk.Frame(videoFrame, bg='#3b3b3b', height=60)
+        videoControlsFrame = tk.Frame(videoFrame, bg='#3b3b3b', height=50)
         videoControlsFrame.pack(fill=tk.X, padx=10, pady=(0, 10))
         videoControlsFrame.pack_propagate(False)
         
@@ -289,43 +394,43 @@ class VideoSegmentEditor:
         
         # Move Back buttons
         self.move640Back = tk.Button(centerFrame, text="←← 640", command=self.moveSegment640Back,
-                bg='#455a64', fg='white', font=('Arial', 12, 'bold'), width=8, height=3, state='disabled')
-        self.move640Back.pack(side=tk.LEFT, padx=8)
+                bg='#455a64', fg='white', font=('TkDefaultFont', 10, 'bold'), width=8, height=2, state='disabled')
+        self.move640Back.pack(side=tk.LEFT, padx=6)
         self.move64Back = tk.Button(centerFrame, text="← 64", command=self.moveSegment64Back,
-                bg='#607d8b', fg='white', font=('Arial', 12, 'bold'), width=8, height=3, state='disabled')
-        self.move64Back.pack(side=tk.LEFT, padx=8)
+                bg='#607d8b', fg='white', font=('TkDefaultFont', 10, 'bold'), width=8, height=2, state='disabled')
+        self.move64Back.pack(side=tk.LEFT, padx=6)
         
         # Play/Pause button for preview
         self.previewPlayPauseBtn = tk.Button(centerFrame, text="PLAY", 
                                             command=self.togglePreviewPlayback,
                                             bg=Constants.COLORS['button_green'], fg=Constants.COLORS['text_white'], 
-                                            font=('Arial', 12, 'bold'), width=8, height=3, state='disabled')
-        self.previewPlayPauseBtn.pack(side=tk.LEFT, padx=8)
+                                            font=('TkDefaultFont', 10, 'bold'), width=8, height=2, state='disabled')
+        self.previewPlayPauseBtn.pack(side=tk.LEFT, padx=6)
         
         # Replay button
         self.replayBtn = tk.Button(centerFrame, text="REPLAY", 
                                   command=self.replaySegment,
-                                  bg='#ff9800', fg='white', font=('Arial', 12, 'bold'),
-                                  width=8, height=3, state='disabled')
-        self.replayBtn.pack(side=tk.LEFT, padx=8)
+                                  bg='#ff9800', fg='white', font=('TkDefaultFont', 10, 'bold'),
+                                  width=8, height=2, state='disabled')
+        self.replayBtn.pack(side=tk.LEFT, padx=6)
         
         # Move Forward buttons
         self.move64Forward = tk.Button(centerFrame, text="64 →", command=self.moveSegment64Forward,
-                bg='#607d8b', fg='white', font=('Arial', 12, 'bold'), width=8, height=3, state='disabled')
-        self.move64Forward.pack(side=tk.LEFT, padx=8)
+                bg='#607d8b', fg='white', font=('TkDefaultFont', 10, 'bold'), width=8, height=2, state='disabled')
+        self.move64Forward.pack(side=tk.LEFT, padx=6)
         self.move640Forward =tk.Button(centerFrame, text="640 →→", command=self.moveSegment640Forward,
-                bg='#455a64', fg='white', font=('Arial', 12, 'bold'), width=8, height=3, state='disabled')
-        self.move640Forward.pack(side=tk.LEFT, padx=8)
+                bg='#455a64', fg='white', font=('TkDefaultFont', 10, 'bold'), width=8, height=2, state='disabled')
+        self.move640Forward.pack(side=tk.LEFT, padx=6)
         
     def setupTimelineControls(self, parent):
         """Setup timeline and playback controls"""
-        timelineFrame = tk.Frame(parent, bg='#3b3b3b', relief=tk.RAISED, bd=2, height=120)
+        timelineFrame = tk.Frame(parent, bg='#3b3b3b', relief=tk.RAISED, bd=2, height=100)
         timelineFrame.pack(fill=tk.X, pady=(0, 10))
         timelineFrame.pack_propagate(False)
         
         # Timeline canvas for visual representation
-        self.timelineCanvas = tk.Canvas(timelineFrame, bg='#1e1e1e', height=80)
-        self.timelineCanvas.pack(fill=tk.X, padx=20, pady=15)
+        self.timelineCanvas = tk.Canvas(timelineFrame, bg='#1e1e1e', height=60)
+        self.timelineCanvas.pack(fill=tk.X, padx=15, pady=10)
         
         # Bind timeline events
         self.timelineCanvas.bind('<Button-1>', self.onTimelineClick)
@@ -341,15 +446,15 @@ class VideoSegmentEditor:
         # Single Play/Pause button
         self.playPauseBtn = tk.Button(controlsFrame, text="▶ Play Segment", command=self.togglePlayPause,
                                      bg=Constants.COLORS['button_green'], fg=Constants.COLORS['text_white'], 
-                                     font=('Arial', 12, 'bold'), width=18, height=2)
-        self.playPauseBtn.pack(side=tk.LEFT, padx=10)
+                                     font=('TkDefaultFont', 10, 'bold'), width=15, height=1)
+        self.playPauseBtn.pack(side=tk.LEFT, padx=8)
         
         # Segment info
         tk.Label(controlsFrame, text="Segment:", bg='#3b3b3b', fg='white', 
-                font=('Arial', 11)).pack(side=tk.LEFT, padx=(20, 5))
+                font=('TkDefaultFont', 9)).pack(side=tk.LEFT, padx=(15, 5))
         
         self.segmentInfoLabel = tk.Label(controlsFrame, text="Frames 0-63 (64 frames)", 
-                                        bg='#3b3b3b', fg='lightgreen', font=('Arial', 11, 'bold'))
+                                        bg='#3b3b3b', fg='lightgreen', font=('TkDefaultFont', 9, 'bold'))
         self.segmentInfoLabel.pack(side=tk.LEFT, padx=5)
         
         # Draw initial timeline with 0:00 times
@@ -358,77 +463,823 @@ class VideoSegmentEditor:
     def setupControlPanels(self, parent):
         """Setup control panels for different workflow states"""
         controlFrame = tk.Frame(parent, bg='#2b2b2b')
-        controlFrame.pack(fill=tk.BOTH, expand=True, padx=10)
+        controlFrame.pack(fill=tk.BOTH, expand=True, padx=5)
+        
+        # Bind resize event to update text wrapping
+        controlFrame.bind('<Configure>', self.onControlPanelResize)
         
         # Segment Selection Controls Panel (always visible on right)
         self.selectionControlPanel = tk.LabelFrame(controlFrame, text="Segment Selection & Controls", 
-                                                  font=('Arial', 14, 'bold'), bg='#3b3b3b', fg='white')
+                                                  font=('TkDefaultFont', 10, 'bold'), bg='#3b3b3b', fg='white')
         
         selectionControlInner = tk.Frame(self.selectionControlPanel, bg='#3b3b3b')
-        selectionControlInner.pack(padx=20, pady=20)
+        selectionControlInner.pack(padx=8, pady=8, fill=tk.BOTH, expand=True)
         
-        # Segment selection instructions
-        tk.Label(selectionControlInner, text="Select a 64-frame segment from the video timeline", 
-                bg='#3b3b3b', fg='lightgray', font=('Arial', 12)).pack(pady=5)
+        # Segment selection instructions - will wrap based on window size
+        self.segmentInstructionLabel1 = tk.Label(selectionControlInner, 
+                                                 text="Select 64-frame segment from timeline", 
+                                                 bg='#3b3b3b', fg='lightgray', font=('TkDefaultFont', 9), 
+                                                 wraplength=300, justify=tk.LEFT)
+        self.segmentInstructionLabel1.pack(pady=2, fill=tk.X)
         
-        tk.Label(selectionControlInner, text="Click and drag on the timeline \nor use arrow buttons to position", 
-                bg='#3b3b3b', fg='lightgray', font=('Arial', 11)).pack(pady=5)
+        self.segmentInstructionLabel2 = tk.Label(selectionControlInner, 
+                                                 text="Click/drag timeline or use arrow buttons", 
+                                                 bg='#3b3b3b', fg='lightgray', font=('TkDefaultFont', 9), 
+                                                 wraplength=300, justify=tk.LEFT)
+        self.segmentInstructionLabel2.pack(pady=2, fill=tk.X)
         
         # Segment info display
         segmentInfoFrame = tk.Frame(selectionControlInner, bg='#3b3b3b')
-        segmentInfoFrame.pack(pady=10)
+        segmentInfoFrame.pack(pady=6, fill=tk.X)
         
         tk.Label(segmentInfoFrame, text="Current Selection:", 
-                bg='#3b3b3b', fg='white', font=('Arial', 12, 'bold')).pack()
+                bg='#3b3b3b', fg='white', font=('TkDefaultFont', 9, 'bold')).pack(anchor=tk.W)
         
         self.rightSegmentInfoLabel = tk.Label(segmentInfoFrame, text="Frames 0-63 (64 frames)", 
-                                             bg='#3b3b3b', fg='lightgreen', font=('Arial', 11, 'bold'))
-        self.rightSegmentInfoLabel.pack(pady=5)
+                                             bg='#3b3b3b', fg='lightgreen', font=('TkDefaultFont', 8, 'bold'),
+                                             wraplength=300, justify=tk.LEFT)
+        self.rightSegmentInfoLabel.pack(pady=2, fill=tk.X, anchor=tk.W)
         
-        # Control buttons
-        tk.Label(selectionControlInner, text="Use the controls below the video to preview and replay segments", 
-                bg='#3b3b3b', fg='lightgray', font=('Arial', 12)).pack(pady=(15, 8))
+        # Control buttons instruction
+        self.controlInstructionLabel = tk.Label(selectionControlInner, 
+                                               text="Use controls below video to preview/replay", 
+                                               bg='#3b3b3b', fg='lightgray', font=('TkDefaultFont', 9), 
+                                               wraplength=300, justify=tk.LEFT)
+        self.controlInstructionLabel.pack(pady=(8, 4), fill=tk.X)
         
         # Always show selection control panel
-        self.selectionControlPanel.pack(fill=tk.X, pady=10)
+        self.selectionControlPanel.pack(fill=tk.X, pady=4)
         
         # Review & Annotation Panel (always visible)
         self.reviewAnnotationPanel = tk.LabelFrame(controlFrame, text="Smoke Annotation", 
-                                                  font=('Arial', 14, 'bold'), bg='#3b3b3b', fg='white')
+                                                  font=('TkDefaultFont', 10, 'bold'), bg='#3b3b3b', fg='white')
         
         reviewAnnotationInner = tk.Frame(self.reviewAnnotationPanel, bg='#3b3b3b')
-        reviewAnnotationInner.pack(padx=20, pady=20)
+        reviewAnnotationInner.pack(padx=8, pady=8, fill=tk.BOTH, expand=True)
         
         # Instructions
-        tk.Label(reviewAnnotationInner, text="After reviewing the segment:", 
-                bg='#3b3b3b', fg='white', font=('Arial', 16, 'bold')).pack(pady=10)
+        instructionLabel = tk.Label(reviewAnnotationInner, text="After reviewing the segment:", 
+                                   bg='#3b3b3b', fg='white', font=('TkDefaultFont', 10, 'bold'))
+        instructionLabel.pack(pady=3, anchor=tk.W)
         
-        tk.Label(reviewAnnotationInner, text="Is there smoke visible at the end\n of this 64-frame segment?", 
-                bg='#3b3b3b', fg='lightgray', font=('Arial', 14)).pack(pady=10)
+        self.questionLabel = tk.Label(reviewAnnotationInner, 
+                                     text="Is there smoke visible at the end of this 64-frame segment?", 
+                                     bg='#3b3b3b', fg='lightgray', font=('TkDefaultFont', 9), 
+                                     wraplength=300, justify=tk.LEFT)
+        self.questionLabel.pack(pady=3, fill=tk.X)
         
         # Watch requirement notice
-        self.watchNoticeLabel = tk.Label(reviewAnnotationInner, text="Please watch the segment first to enable annotation", 
-                                        bg='#3b3b3b', fg='orange', font=('Arial', 12, 'italic'))
-        self.watchNoticeLabel.pack(pady=8)
+        self.watchNoticeLabel = tk.Label(reviewAnnotationInner, 
+                                        text="Please watch the segment first to enable annotation", 
+                                        bg='#3b3b3b', fg='orange', font=('TkDefaultFont', 8, 'italic'),
+                                        wraplength=300, justify=tk.LEFT)
+        self.watchNoticeLabel.pack(pady=4, fill=tk.X)
         
         annotationButtonsFrame = tk.Frame(reviewAnnotationInner, bg='#3b3b3b')
-        annotationButtonsFrame.pack(pady=25)
+        annotationButtonsFrame.pack(pady=10, fill=tk.X)
         
-        self.smokeBtn = tk.Button(annotationButtonsFrame, text="SMOKE", 
+        self.smokeBtn = tk.Button(annotationButtonsFrame, text="SMOKE DETECTED", 
                                  command=self.markSmoke,
-                                 bg='#757575', fg='white', font=('Arial', 18, 'bold'),
-                                   width=35, height=6, state='disabled')
-        self.smokeBtn.pack(pady=12)
+                                 bg='#757575', fg='white', font=('TkDefaultFont', 10, 'bold'),
+                                 height=2, state='disabled')
+        self.smokeBtn.pack(pady=4, fill=tk.X)
         
         self.noSmokeBtn = tk.Button(annotationButtonsFrame, text="NO SMOKE", 
                                    command=self.markNoSmoke,
-                                   bg='#757575', fg='white', font=('Arial', 18, 'bold'),
-                                   width=35, height=6, state='disabled')
-        self.noSmokeBtn.pack(pady=12)
+                                   bg='#757575', fg='white', font=('TkDefaultFont', 10, 'bold'),
+                                   height=2, state='disabled')
+        self.noSmokeBtn.pack(pady=4, fill=tk.X)
         
         # Always show the annotation panel
-        self.reviewAnnotationPanel.pack(fill=tk.X, pady=10)
+        self.reviewAnnotationPanel.pack(fill=tk.X, pady=4)
         
+    def onControlPanelResize(self, event=None):
+        """Handle control panel resize and update text wrapping"""
+        if event and event.widget and hasattr(event.widget, 'winfo_width'):
+            panel_width = event.widget.winfo_width()
+            if panel_width > 50:  # Reasonable minimum width
+                new_wraplength = max(200, panel_width - 40)
+                
+                # Update all labels with wraplength
+                labels_to_update = [
+                    'segmentInstructionLabel1', 'segmentInstructionLabel2',
+                    'rightSegmentInfoLabel', 'controlInstructionLabel',
+                    'questionLabel', 'watchNoticeLabel'
+                ]
+                
+                for label_name in labels_to_update:
+                    if hasattr(self, label_name):
+                        label = getattr(self, label_name)
+                        if label and hasattr(label, 'config'):
+                            label.config(wraplength=new_wraplength)
+        
+    def onWindowResize(self, event=None):
+        """Handle main window resize and update fonts/layout"""
+        if event and event.widget != self.root:
+            return  # Only handle root window resize
+            
+        try:
+            window_width = self.root.winfo_width()
+            window_height = self.root.winfo_height()
+            
+            if window_width > 1 and window_height > 1:
+                # Calculate scale factor based on window size
+                base_width = 1600  # Reference width
+                base_height = 1000  # Reference height
+                
+                width_scale = window_width / base_width
+                height_scale = window_height / base_height
+                new_scale = min(width_scale, height_scale)
+                
+                # Apply minimum and maximum scale limits
+                new_scale = max(0.7, min(new_scale, 2.0))
+                
+                if abs(new_scale - self.currentScaleFactor) > 0.1:
+                    self.currentScaleFactor = new_scale
+                    self.updateFontScaling()
+        except:
+            pass  # Ignore any errors during resize
+    
+    def updateFontScaling(self):
+        """Update font sizes for all tracked widgets"""
+        try:
+            for widget_info in self.scalableWidgets:
+                widget = widget_info['widget']
+                if widget.winfo_exists():
+                    font_type = widget_info['font_type']
+                    base_size = self.originalFontSizes.get(font_type, 10)
+                    new_size = max(8, int(base_size * self.currentScaleFactor))
+                    
+                    # Get current font config
+                    current_font = widget.cget('font')
+                    if isinstance(current_font, str):
+                        widget.config(font=(current_font, new_size))
+                    elif isinstance(current_font, tuple):
+                        font_family = current_font[0] if current_font else 'TkDefaultFont'
+                        widget.config(font=(font_family, new_size))
+                    else:
+                        widget.config(font=('TkDefaultFont', new_size))
+        except:
+            pass  # Ignore any font update errors
+    
+    def trackWidgetForScaling(self, widget, font_type='default'):
+        """Add a widget to the font scaling system"""
+        self.scalableWidgets.append({
+            'widget': widget,
+            'font_type': font_type
+        })
+        
+    def setupTemporalAnalysisDisplay(self, parent):
+        """Setup temporal analysis display area"""
+        temporalFrame = tk.LabelFrame(parent, text="Temporal Analysis", 
+                                     font=('TkDefaultFont', 12, 'bold'), bg='#3b3b3b', fg='white')
+        temporalFrame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        temporalInner = tk.Frame(temporalFrame, bg='#3b3b3b')
+        temporalInner.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # Info label - will resize with window, larger font for better readability
+        self.temporalInfoLabel = tk.Label(temporalInner, 
+                                         text="Temporal analysis will appear here after watching a segment", 
+                                         bg='#3b3b3b', fg='lightgray', font=('TkDefaultFont', 10, 'italic'),
+                                         wraplength=350, justify=tk.CENTER)
+        self.temporalInfoLabel.pack(pady=8, fill=tk.X)
+        
+        # Temporal analysis canvas - will expand with window, larger now
+        self.temporalCanvas = tk.Canvas(temporalInner, bg='black', highlightthickness=0,
+                                       relief=tk.SUNKEN, bd=2)
+        self.temporalCanvas.pack(fill=tk.BOTH, expand=True, pady=8)
+        
+        # Bind resize event to update canvas content
+        self.temporalCanvas.bind('<Configure>', self.onTemporalCanvasResize)
+        
+        # Analysis details - will wrap text properly, larger font
+        self.analysisDetailsLabel = tk.Label(temporalInner, text="", 
+                                           bg='#3b3b3b', fg='lightgreen', font=('TkDefaultFont', 10),
+                                           wraplength=350, justify=tk.LEFT)
+        self.analysisDetailsLabel.pack(pady=8, fill=tk.X)
+        
+    def onTemporalCanvasResize(self, event=None):
+        """Handle temporal canvas resize and update displayed image"""
+        if hasattr(self, 'currentTemporalImageData') and self.currentTemporalImageData is not None:
+            # Redraw temporal analysis with new canvas size
+            self.displayTemporalAnalysis(self.currentTemporalImageData['image'], 
+                                       self.currentTemporalImageData['frame_count'])
+        
+        # Update wraplength for labels based on canvas width
+        if self.temporalCanvas and hasattr(self.temporalCanvas, 'winfo_width'):
+            try:
+                canvas_width = self.temporalCanvas.winfo_width()
+                if canvas_width > 1:
+                    new_wraplength = max(250, canvas_width - 40)  # Better wraplength for larger temporal tab
+                    if self.temporalInfoLabel:
+                        self.temporalInfoLabel.config(wraplength=new_wraplength)
+                    if self.analysisDetailsLabel:
+                        self.analysisDetailsLabel.config(wraplength=new_wraplength)
+            except:
+                pass  # Ignore any errors during resize
+    
+    def showHistoryMenu(self):
+        """Show history menu with different viewing options"""
+        if not self.annotations:
+            messagebox.showinfo("History", "No annotations saved yet.")
+            return
+        
+        # Create menu window - much larger size with proper scaling
+        menuWindow = tk.Toplevel(self.root)
+        menuWindow.title("History Options")
+        menuWindow.geometry("600x450")
+        menuWindow.configure(bg=Constants.COLORS['bg_dark'])
+        menuWindow.resizable(True, True)
+        menuWindow.minsize(500, 350)
+        
+        # Center the window
+        menuWindow.transient(self.root)
+        menuWindow.grab_set()
+        
+        # Position window relative to parent
+        self.root.update_idletasks()
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 300
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 225
+        menuWindow.geometry(f"600x450+{x}+{y}")
+        
+        # Title
+        titleLabel = tk.Label(menuWindow, text="History & Statistics", 
+                             font=('TkDefaultFont', 14, 'bold'), 
+                             bg=Constants.COLORS['bg_dark'], fg='white')
+        titleLabel.pack(pady=25)
+        
+        # Button frame with more padding
+        buttonFrame = tk.Frame(menuWindow, bg=Constants.COLORS['bg_dark'])
+        buttonFrame.pack(expand=True, fill=tk.BOTH, padx=60, pady=30)
+        
+        # Interactive History button - smaller font and height
+        interactiveBtn = tk.Button(buttonFrame, text="Interactive History\n(Click to jump to segments)", 
+                                  command=lambda: self._openHistoryAndCloseMenu(menuWindow, 'interactive'),
+                                  bg='#4caf50', fg='white', font=('TkDefaultFont', 10, 'bold'),
+                                  height=2)
+        interactiveBtn.pack(pady=15, fill=tk.X)
+        
+        # Statistics button - smaller font and height
+        statsBtn = tk.Button(buttonFrame, text="Statistics & Summary\n(Overview of annotations)", 
+                            command=lambda: self._openHistoryAndCloseMenu(menuWindow, 'stats'),
+                            bg='#2196f3', fg='white', font=('TkDefaultFont', 10, 'bold'),
+                            height=2)
+        statsBtn.pack(pady=15, fill=tk.X)
+        
+        # Export button - smaller font and height
+        exportBtn = tk.Button(buttonFrame, text="Export Data\n(Save annotations to file)", 
+                             command=lambda: self._openHistoryAndCloseMenu(menuWindow, 'export'),
+                             bg='#ff9800', fg='white', font=('TkDefaultFont', 10, 'bold'),
+                             height=2)
+        exportBtn.pack(pady=15, fill=tk.X)
+        
+        # Add resize handler for dynamic text scaling
+        def onHistoryMenuResize(event=None):
+            if event and event.widget == menuWindow:
+                try:
+                    width = menuWindow.winfo_width()
+                    height = menuWindow.winfo_height()
+                    
+                    # Scale font size based on window size
+                    base_font_size = 10
+                    scale_factor = min(width / 600, height / 450)
+                    new_font_size = max(8, min(14, int(base_font_size * scale_factor)))
+                    
+                    # Update title font
+                    title_font_size = max(10, min(18, int(14 * scale_factor)))
+                    titleLabel.config(font=('TkDefaultFont', title_font_size, 'bold'))
+                    
+                    # Update button fonts
+                    button_font = ('TkDefaultFont', new_font_size, 'bold')
+                    interactiveBtn.config(font=button_font)
+                    statsBtn.config(font=button_font)
+                    exportBtn.config(font=button_font)
+                except:
+                    pass
+        
+        menuWindow.bind('<Configure>', onHistoryMenuResize)
+        
+        # Initial font scaling
+        menuWindow.after(100, onHistoryMenuResize)
+    
+    def _openHistoryAndCloseMenu(self, menuWindow, action):
+        """Close menu and open the requested history view"""
+        menuWindow.destroy()
+        
+        if action == 'interactive':
+            self.showHistory()
+        elif action == 'stats':
+            self.showStatistics()
+        elif action == 'export':
+            self.exportAnnotations()
+    
+    def showStatistics(self):
+        """Show statistics and summary of annotations"""
+        if not self.annotations:
+            messagebox.showinfo("Statistics", "No annotations saved yet.")
+            return
+        
+        # Create statistics window
+        statsWindow = tk.Toplevel(self.root)
+        statsWindow.title("Annotation Statistics")
+        statsWindow.geometry("700x500")
+        statsWindow.configure(bg=Constants.COLORS['bg_dark'])
+        
+        # Title
+        titleLabel = tk.Label(statsWindow, text="[CHART] Annotation Statistics", 
+                             font=('TkDefaultFont', 16, 'bold'), 
+                             bg=Constants.COLORS['bg_dark'], fg='white')
+        titleLabel.pack(pady=20)
+        
+        # Calculate statistics
+        total_videos = len(self.annotations)
+        total_annotations = sum(len(segments) for segments in self.annotations.values())
+        smoke_count = sum(1 for segments in self.annotations.values() 
+                         for annotation in segments.values() if annotation['has_smoke'])
+        no_smoke_count = total_annotations - smoke_count
+        
+        # Create scrollable frame for stats
+        scrollFrame = tk.Frame(statsWindow, bg=Constants.COLORS['bg_dark'])
+        scrollFrame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        canvas = tk.Canvas(scrollFrame, bg='#2b2b2b', highlightthickness=0)
+        scrollbar = tk.Scrollbar(scrollFrame, orient="vertical", command=canvas.yview)
+        statsContent = tk.Frame(canvas, bg='#2b2b2b')
+        
+        statsContent.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=statsContent, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Overall statistics
+        overallFrame = tk.LabelFrame(statsContent, text="[STATS] Overall Statistics", 
+                                   font=('TkDefaultFont', 12, 'bold'), bg='#3b3b3b', fg='white')
+        overallFrame.pack(fill=tk.X, padx=10, pady=10)
+        
+        stats_text = f"""
+[VIDEO] Total Videos: {total_videos}
+[NOTES] Total Annotations: {total_annotations}
+[SMOKE] Smoke Detected: {smoke_count} ({(smoke_count/total_annotations*100) if total_annotations > 0 else 0:.1f}%)
+[OK] No Smoke: {no_smoke_count} ({(no_smoke_count/total_annotations*100) if total_annotations > 0 else 0:.1f}%)
+"""
+        
+        statsLabel = tk.Label(overallFrame, text=stats_text, 
+                             font=('TkDefaultFont', 11), bg='#3b3b3b', fg='white', justify=tk.LEFT)
+        statsLabel.pack(padx=15, pady=10)
+        
+        # Per-video breakdown
+        videoFrame = tk.LabelFrame(statsContent, text="[VIDEO] Per-Video Breakdown", 
+                                 font=('TkDefaultFont', 12, 'bold'), bg='#3b3b3b', fg='white')
+        videoFrame.pack(fill=tk.X, padx=10, pady=10)
+        
+        for video_file, segments in self.annotations.items():
+            video_name = os.path.basename(video_file)
+            video_annotations = len(segments)
+            video_smoke = sum(1 for annotation in segments.values() if annotation['has_smoke'])
+            video_no_smoke = video_annotations - video_smoke
+            
+            videoInfoFrame = tk.Frame(videoFrame, bg='#4a4a4a', relief=tk.RAISED, bd=1)
+            videoInfoFrame.pack(fill=tk.X, padx=10, pady=5)
+            
+            videoNameLabel = tk.Label(videoInfoFrame, text=f"[VIDEO] {video_name}", 
+                                     font=('TkDefaultFont', 10, 'bold'), bg='#4a4a4a', fg='lightblue')
+            videoNameLabel.pack(anchor=tk.W, padx=10, pady=5)
+            
+            videoStatsText = f"   [NOTES] {video_annotations} annotations | [SMOKE] {video_smoke} smoke | [OK] {video_no_smoke} no smoke"
+            videoStatsLabel = tk.Label(videoInfoFrame, text=videoStatsText, 
+                                      font=('TkDefaultFont', 9), bg='#4a4a4a', fg='lightgray')
+            videoStatsLabel.pack(anchor=tk.W, padx=10, pady=(0, 5))
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Enable mouse wheel scrolling
+        def onMousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind("<MouseWheel>", onMousewheel)
+    
+    def exportAnnotations(self):
+        """Export annotations to JSON file"""
+        if not self.annotations:
+            messagebox.showinfo("Export", "No annotations to export.")
+            return
+        
+        # Ask user where to save
+        export_file = filedialog.asksaveasfilename(
+            title="Export Annotations",
+            defaultextension=".json",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+        )
+        
+        if not export_file:
+            return
+        
+        try:
+            # Prepare export data
+            export_data = {
+                "export_info": {
+                    "timestamp": datetime.now().isoformat(),
+                    "total_videos": len(self.annotations),
+                    "total_annotations": sum(len(segments) for segments in self.annotations.values())
+                },
+                "annotations": self.annotations
+            }
+            
+            # Save to file
+            with open(export_file, 'w') as f:
+                json.dump(export_data, f, indent=2)
+            
+            messagebox.showinfo("Export Successful", 
+                               f"Annotations exported to:\n{export_file}")
+            
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export annotations:\n{str(e)}")
+        
+    def showHistory(self):
+        """Show interactive annotation history with clickable entries"""
+        if not self.annotations:
+            messagebox.showinfo("History", "No annotations saved yet.")
+            return
+            
+        # Create history window
+        historyWindow = tk.Toplevel(self.root)
+        historyWindow.title("Annotation History - Click to Jump to Segment")
+        historyWindow.geometry("800x600")
+        historyWindow.configure(bg=Constants.COLORS['bg_dark'])
+        
+        # Header
+        headerFrame = tk.Frame(historyWindow, bg=Constants.COLORS['bg_dark'])
+        headerFrame.pack(fill=tk.X, padx=10, pady=10)
+        
+        headerLabel = tk.Label(headerFrame, text="Annotation History", 
+                              font=('TkDefaultFont', 16, 'bold'), 
+                              bg=Constants.COLORS['bg_dark'], fg='white')
+        headerLabel.pack(side=tk.LEFT)
+        
+        instructionLabel = tk.Label(headerFrame, text="Click any entry to load video and jump to that segment", 
+                                   font=('TkDefaultFont', 10, 'italic'), 
+                                   bg=Constants.COLORS['bg_dark'], fg='lightgray')
+        instructionLabel.pack(side=tk.RIGHT)
+        
+        # Create main frame with scrollable content
+        mainFrame = tk.Frame(historyWindow, bg=Constants.COLORS['bg_dark'])
+        mainFrame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        
+        # Create canvas and scrollbar for scrolling
+        canvas = tk.Canvas(mainFrame, bg='#2b2b2b', highlightthickness=0)
+        scrollbar = tk.Scrollbar(mainFrame, orient="vertical", command=canvas.yview)
+        scrollableFrame = tk.Frame(canvas, bg='#2b2b2b')
+        
+        scrollableFrame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollableFrame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Add content to scrollable frame
+        self._populateHistoryContent(scrollableFrame, historyWindow)
+        
+        # Pack canvas and scrollbar
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Enable mouse wheel scrolling
+        def onMousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind("<MouseWheel>", onMousewheel)
+        
+    def _populateHistoryContent(self, parent, historyWindow):
+        """Populate the history window with annotation entries"""
+        entry_count = 0
+        
+        for video_file, segments in self.annotations.items():
+            # Video header
+            videoFrame = tk.Frame(parent, bg='#3b3b3b', relief=tk.RAISED, bd=2)
+            videoFrame.pack(fill=tk.X, padx=5, pady=10)
+            
+            video_name = os.path.basename(video_file)
+            videoHeaderLabel = tk.Label(videoFrame, text=f"[VIDEO] {video_name}", 
+                                       font=('TkDefaultFont', 14, 'bold'), 
+                                       bg='#3b3b3b', fg='lightblue')
+            videoHeaderLabel.pack(pady=8)
+            
+            # Sort segments by start frame
+            sorted_segments = sorted(segments.items(), key=lambda x: x[1]['start_frame'])
+            
+            for segment_key, annotation in sorted_segments:
+                entry_count += 1
+                
+                # Create clickable entry frame
+                entryFrame = tk.Frame(videoFrame, bg='#4a4a4a', relief=tk.RAISED, bd=1,
+                                     cursor='hand2')
+                entryFrame.pack(fill=tk.X, padx=10, pady=3)
+                
+                # Bind click events to the frame and all its children
+                self._bindClickEvents(entryFrame, video_file, annotation, historyWindow)
+                
+                # Main info row
+                infoFrame = tk.Frame(entryFrame, bg='#4a4a4a')
+                infoFrame.pack(fill=tk.X, padx=8, pady=6)
+                
+                # Smoke status with color coding
+                smoke_status = "[SMOKE] SMOKE DETECTED" if annotation['has_smoke'] else "[OK] NO SMOKE"
+                status_color = '#ff6b6b' if annotation['has_smoke'] else '#51cf66'
+                
+                statusLabel = tk.Label(infoFrame, text=smoke_status, 
+                                      font=('TkDefaultFont', 12, 'bold'), 
+                                      bg='#4a4a4a', fg=status_color)
+                statusLabel.pack(side=tk.LEFT)
+                self._bindClickEvents(statusLabel, video_file, annotation, historyWindow)
+                
+                # Segment info
+                segment_info = f"Frames {annotation['start_frame']}-{annotation['end_frame']}"
+                segmentLabel = tk.Label(infoFrame, text=segment_info, 
+                                       font=('TkDefaultFont', 10, 'bold'), 
+                                       bg='#4a4a4a', fg='lightgreen')
+                segmentLabel.pack(side=tk.LEFT, padx=(20, 0))
+                self._bindClickEvents(segmentLabel, video_file, annotation, historyWindow)
+                
+                # Time info
+                time_info = f"{annotation.get('start_time', 'N/A')} - {annotation.get('end_time', 'N/A')}"
+                timeLabel = tk.Label(infoFrame, text=time_info, 
+                                    font=('TkDefaultFont', 10), 
+                                    bg='#4a4a4a', fg='lightgray')
+                timeLabel.pack(side=tk.RIGHT)
+                self._bindClickEvents(timeLabel, video_file, annotation, historyWindow)
+                
+                # Details row
+                detailsFrame = tk.Frame(entryFrame, bg='#4a4a4a')
+                detailsFrame.pack(fill=tk.X, padx=8, pady=(0, 6))
+                
+                # Timestamp
+                timestamp = annotation.get('timestamp', 'Unknown')
+                if timestamp != 'Unknown':
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+                    except:
+                        formatted_time = timestamp
+                else:
+                    formatted_time = 'Unknown'
+                
+                timestampLabel = tk.Label(detailsFrame, text=f"[DATE] {formatted_time}", 
+                                         font=('TkDefaultFont', 9), 
+                                         bg='#4a4a4a', fg='lightgray')
+                timestampLabel.pack(side=tk.LEFT)
+                self._bindClickEvents(timestampLabel, video_file, annotation, historyWindow)
+                
+                # Duration info
+                duration = annotation.get('segment_duration', 0)
+                frame_count = annotation.get('frame_count', 0)
+                durationLabel = tk.Label(detailsFrame, text=f"[TIME] {duration:.1f}s ({frame_count} frames)", 
+                                        font=('TkDefaultFont', 9), 
+                                        bg='#4a4a4a', fg='lightgray')
+                durationLabel.pack(side=tk.RIGHT)
+                self._bindClickEvents(durationLabel, video_file, annotation, historyWindow)
+                
+                # Hover effects
+                self._addHoverEffects(entryFrame)
+        
+        # Summary at the bottom
+        summaryFrame = tk.Frame(parent, bg='#2b2b2b')
+        summaryFrame.pack(fill=tk.X, pady=20)
+        
+        total_videos = len(self.annotations)
+        total_annotations = sum(len(segments) for segments in self.annotations.values())
+        smoke_count = sum(1 for segments in self.annotations.values() 
+                         for annotation in segments.values() if annotation['has_smoke'])
+        no_smoke_count = total_annotations - smoke_count
+        
+        summaryText = (f"[STATS] Summary: {total_videos} videos, {total_annotations} annotations\n"
+                      f"[SMOKE] {smoke_count} smoke detected, [OK] {no_smoke_count} no smoke")
+        
+        summaryLabel = tk.Label(summaryFrame, text=summaryText, 
+                               font=('TkDefaultFont', 11, 'bold'), 
+                               bg='#2b2b2b', fg='white', justify=tk.CENTER)
+        summaryLabel.pack()
+    
+    def _bindClickEvents(self, widget, video_file, annotation, historyWindow):
+        """Bind click events to widget for jumping to segment"""
+        def onClick(event):
+            self._jumpToSegment(video_file, annotation, historyWindow)
+        
+        widget.bind("<Button-1>", onClick)
+        
+        # Also bind to all children
+        for child in widget.winfo_children():
+            self._bindClickEvents(child, video_file, annotation, historyWindow)
+    
+    def _addHoverEffects(self, frame):
+        """Add hover effects to entry frames"""
+        original_bg = frame.cget('bg')
+        hover_bg = '#5a5a5a'
+        
+        def onEnter(event):
+            frame.config(bg=hover_bg)
+            for child in frame.winfo_children():
+                try:
+                    child.config(bg=hover_bg)
+                    for grandchild in child.winfo_children():
+                        try:
+                            grandchild.config(bg=hover_bg)
+                        except:
+                            pass
+                except:
+                    pass
+        
+        def onLeave(event):
+            frame.config(bg=original_bg)
+            for child in frame.winfo_children():
+                try:
+                    child.config(bg=original_bg)
+                    for grandchild in child.winfo_children():
+                        try:
+                            grandchild.config(bg=original_bg)
+                        except:
+                            pass
+                except:
+                    pass
+        
+        frame.bind("<Enter>", onEnter)
+        frame.bind("<Leave>", onLeave)
+    
+    def _jumpToSegment(self, video_file, annotation, historyWindow):
+        """Jump to the specified segment when clicked"""
+        try:
+            # Close history window
+            historyWindow.destroy()
+            
+            # Check if the video file exists
+            if not os.path.exists(video_file):
+                messagebox.showerror("Video Not Found", 
+                                   f"Video file not found:\n{video_file}\n\nPlease locate the video manually.")
+                # Ask user to locate the video
+                new_video_file = filedialog.askopenfilename(
+                    title="Locate the video file",
+                    filetypes=Config.VIDEO_FILETYPES,
+                    initialdir=os.path.dirname(video_file)
+                )
+                if not new_video_file:
+                    return
+                video_file = new_video_file
+            
+            # Load the video if it's different from current
+            if self.currentVideoFile != video_file:
+                self.loadVideo(video_file)
+                
+                # Wait for video to load
+                self.root.update()
+                time.sleep(0.1)
+            
+            # Jump to the specific segment
+            start_frame = annotation['start_frame']
+            end_frame = annotation['end_frame']
+            
+            # Update segment position
+            self.segmentStart = start_frame
+            self.segmentEnd = end_frame
+            
+            # Reset watched status and update UI
+            self.segmentWatched = False
+            self.pausedFrame = None
+            self.updateAnnotationButtons()
+            
+            # Update display
+            self.drawTimeline()
+            self.displayFrame(start_frame)
+            self.updateFrameInfo()
+            
+            # Show confirmation message
+            segment_info = f"frames {start_frame}-{end_frame}"
+            smoke_status = "SMOKE DETECTED" if annotation['has_smoke'] else "NO SMOKE"
+            messagebox.showinfo("Jumped to Segment", 
+                               f"Loaded segment {segment_info}\nStatus: {smoke_status}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to jump to segment: {str(e)}")
+            print(f"Error jumping to segment: {e}")
+        
+    def generateAndDisplayTemporalAnalysis(self):
+        """Generate and display temporal analysis after segment is watched"""
+        if not self.videoCap or not self.segmentWatched or not self.temporalInfoLabel:
+            return
+            
+        try:
+            # Extract frames from current segment
+            frames = []
+            for frame_num in range(self.segmentStart, self.segmentEnd + 1):
+                if frame_num in self.frameCache:
+                    frames.append(self.frameCache[frame_num])
+                else:
+                    # Load frame if not cached
+                    self.videoCap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+                    ret, frame = self.videoCap.read()
+                    if ret:
+                        frames.append(frame)
+                    else:
+                        break
+            
+            if len(frames) < 10:  # Minimum frames needed
+                self.temporalInfoLabel.config(text="Not enough frames for temporal analysis")
+                return
+                
+            # Generate temporal analysis
+            temporal_image = self.temporal_generator.generate_from_frames(frames)
+            
+            # Display temporal analysis
+            self.displayTemporalAnalysis(temporal_image, len(frames))
+            
+        except Exception as e:
+            print(f"Error generating temporal analysis: {e}")
+            if self.temporalInfoLabel:
+                self.temporalInfoLabel.config(text=f"Error generating analysis: {str(e)}")
+            
+    def displayTemporalAnalysis(self, temporal_image, frame_count):
+        """Display the temporal analysis image on the canvas"""
+        if not self.temporalCanvas or not self.temporalInfoLabel:
+            return
+            
+        try:
+            # Store image data for resize events
+            self.currentTemporalImageData = {
+                'image': temporal_image,
+                'frame_count': frame_count
+            }
+            
+            # Convert numpy array to PIL Image
+            if temporal_image.dtype != 'uint8':
+                temporal_image = temporal_image.astype('uint8')
+                
+            pil_image = Image.fromarray(temporal_image, mode='L')  # Grayscale
+            
+            # Get current canvas size
+            self.temporalCanvas.update_idletasks()
+            canvas_width = self.temporalCanvas.winfo_width()
+            canvas_height = self.temporalCanvas.winfo_height()
+            
+            # Use minimum size if canvas isn't ready
+            if canvas_width <= 1:
+                canvas_width = 300
+            if canvas_height <= 1:
+                canvas_height = 300
+                
+            # Calculate size to fit canvas while maintaining aspect ratio and leaving padding
+            img_size = temporal_image.shape[0]  # Should be 192x192
+            padding = 20  # Leave padding around the image
+            available_width = canvas_width - padding
+            available_height = canvas_height - padding
+            
+            # Choose the smaller dimension to ensure the image fits completely
+            max_size = min(available_width, available_height)
+            max_size = max(150, max_size)  # Minimum reasonable size
+            
+            # Only resize if necessary to avoid quality loss
+            if img_size != max_size:
+                # Use LANCZOS for better quality when scaling
+                pil_image = pil_image.resize((max_size, max_size), Image.Resampling.LANCZOS)
+            
+            # Convert to PhotoImage
+            photo_image = ImageTk.PhotoImage(pil_image)
+            
+            # Clear canvas and display image centered
+            self.temporalCanvas.delete("all")
+            
+            # Center the image perfectly
+            center_x = canvas_width // 2
+            center_y = canvas_height // 2
+            
+            self.temporalCanvas.create_image(center_x, center_y, 
+                                           image=photo_image, anchor=tk.CENTER)
+            
+            # Add a border around the image for better visibility
+            img_left = center_x - max_size // 2
+            img_top = center_y - max_size // 2
+            img_right = center_x + max_size // 2
+            img_bottom = center_y + max_size // 2
+            
+            self.temporalCanvas.create_rectangle(img_left - 1, img_top - 1, 
+                                               img_right + 1, img_bottom + 1,
+                                               outline='#666666', width=1)
+            
+            # Keep reference to prevent garbage collection
+            self.currentTemporalImage = photo_image
+            
+            # Update info labels
+            self.temporalInfoLabel.config(text="Temporal analysis generated successfully")
+            if self.analysisDetailsLabel:
+                details_text = (f"Analysis from {frame_count} frames\n"
+                               f"Segment: {self.segmentStart}-{self.segmentEnd}\n"
+                               f"3x3 grid temporal analysis\n"
+                               f"Display size: {max_size}x{max_size}")
+                self.analysisDetailsLabel.config(text=details_text)
+            
+        except Exception as e:
+            print(f"Error displaying temporal analysis: {e}")
+            self.temporalInfoLabel.config(text=f"Display error: {str(e)}")
+
     def setWorkflowState(self, state):
         """Switch between different workflow states"""
         self.workflowState = state
@@ -558,11 +1409,11 @@ class VideoSegmentEditor:
         # Always show time labels
         self.timelineCanvas.create_text(timeline_left - 10, canvas_height // 2, 
                                       text=f"{current_time}", 
-                                      fill=Constants.COLORS['timeline_active'], anchor='e', font=('Arial', 12, 'bold'))
+                                      fill=Constants.COLORS['timeline_active'], anchor='e', font=('TkDefaultFont', 12, 'bold'))
         
         self.timelineCanvas.create_text(timeline_right + 10, canvas_height // 2, 
                                       text=f"{total_time}", 
-                                      fill=Constants.COLORS['timeline_active'], anchor='w', font=('Arial', 12, 'bold'))
+                                      fill=Constants.COLORS['timeline_active'], anchor='w', font=('TkDefaultFont', 12, 'bold'))
         
         # Always draw basic timeline background
         self.timelineCanvas.create_rectangle(timeline_left, 10, timeline_right, canvas_height - 10,
@@ -1133,6 +1984,9 @@ class VideoSegmentEditor:
         self.segmentWatched = True
         self.updateAnnotationButtons()
         
+        # Generate and display temporal analysis after segment is watched
+        self.generateAndDisplayTemporalAnalysis()
+        
         # Display last frame and update timeline
         self.displayFrame(self.segmentEnd)
         self.drawTimeline()
@@ -1212,13 +2066,18 @@ class VideoSegmentEditor:
             # Create segment key
             segment_key = f"frames_{self.segmentStart:06d}_{self.segmentEnd:06d}"
             
-            # Store annotation data
+            # Store annotation data with enhanced information for history
             self.annotations[self.currentVideoFile][segment_key] = {
                 "start_frame": self.segmentStart,
                 "end_frame": self.segmentEnd,
                 "has_smoke": has_smoke,
                 "timestamp": datetime.now().isoformat(),
-                "frame_count": self.segmentEnd - self.segmentStart + 1
+                "frame_count": self.segmentEnd - self.segmentStart + 1,
+                "video_file": self.currentVideoFile,
+                "video_name": os.path.basename(self.currentVideoFile),
+                "segment_duration": (self.segmentEnd - self.segmentStart + 1) / self.fps,
+                "start_time": self._frame_to_time(self.segmentStart),
+                "end_time": self._frame_to_time(self.segmentEnd)
             }
             
             # Save ONLY the current segment (not all segments)
@@ -1268,7 +2127,7 @@ class VideoSegmentEditor:
                     f.write("smoke\n")
                     f.write("no_smoke\n")
             
-            print(f"✅ Saved ONLY current segment: {unique_segment_key}")
+            print(f"[OK] Saved ONLY current segment: {unique_segment_key}")
             print(f"📁 Saved to: {images_dir}")
             
         except Exception as e:
@@ -1518,3 +2377,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
