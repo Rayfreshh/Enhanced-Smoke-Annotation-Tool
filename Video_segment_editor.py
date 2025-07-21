@@ -968,10 +968,6 @@ class VideoSegmentEditor:
         self.drawTimeline()
         self.displayFrame(self.segmentStart)
         
-        # No preloading here - only when user clicks play
-        
-        print(f"Timeline clicked at {event.x}, effective click: {click_x}, ratio: {click_ratio:.3f}, new segment: {self.segmentStart}-{self.segmentEnd}")
-        
     def onTimelineDrag(self, event):
         """Handle timeline drag for segment positioning"""
         self.onTimelineClick(event)
@@ -1744,9 +1740,6 @@ class VideoSegmentEditor:
             # Final status update
             self.updateProcessingStatus("Finalizing annotation...")
             
-            print(f"✅ Saved ONLY current segment: {unique_segment_key}")
-            print(f"📁 Saved to: {images_dir}")
-            
         except Exception as e:
             print(f"Error saving current segment: {e}")
             raise  # Re-raise to be caught by the calling method
@@ -1896,9 +1889,7 @@ class VideoSegmentEditor:
             
     def saveSegmentTemporalAnalysis(self, start_frame, end_frame, unique_segment_key, images_dir):
         """Generate and save temporal analysis image from 64-frame segment"""
-        try:
-            print(f"Generating temporal analysis for frames {start_frame}-{end_frame}...")
-            
+        try:            
             # Load all 64 frames from the segment
             frames = []
             for frame_num in range(start_frame, end_frame + 1):
@@ -1918,8 +1909,6 @@ class VideoSegmentEditor:
                             return
                 
                 frames.append(frame)
-            
-            print(f"Loaded {len(frames)} frames for temporal analysis")
             
             # Generate temporal analysis image (192x192)
             temporal_image = self.temporal_generator.generate_from_frames(frames)
