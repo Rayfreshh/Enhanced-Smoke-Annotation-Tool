@@ -287,6 +287,8 @@ class VideoSegmentEditor:
             self.selectionInfoLabel.config(font=('Arial', self.panel_fonts['panel_title'], 'bold'))
         if hasattr(self, 'rightSegmentInfoLabel'):
             self.rightSegmentInfoLabel.config(font=('Arial', self.panel_fonts['info'], 'bold'))
+        if hasattr(self, 'rightAnnotationInfoLabel'):
+            self.rightAnnotationInfoLabel.config(font=('Arial', self.panel_fonts['info'], 'bold'))
 
         # Update annotation buttons
         if hasattr(self, 'smokeBtn'):
@@ -342,6 +344,7 @@ class VideoSegmentEditor:
         self.currentSegmentAnnotated = False
         self.segmentWatched = False
         self.lastFrame = None
+        self.all_annotations = {}
         
     def _init_gui_state(self):
         """Initialize GUI state properties"""
@@ -598,6 +601,16 @@ class VideoSegmentEditor:
                                              bg='#3b3b3b', fg='lightgreen', 
                                              font=('Arial', self.panel_fonts.get('info', 10), 'bold'))
         self.rightSegmentInfoLabel.pack(pady=2)
+
+        self.annotationInfoLabel = tk.Label(segmentInfoFrame, text="Annotation information:", 
+                bg='#3b3b3b', fg='white', 
+                font=('Arial', self.panel_fonts.get('panel_title', 12), 'bold'))
+        self.annotationInfoLabel.pack()
+
+        self.rightAnnotationInfoLabel = tk.Label(segmentInfoFrame, text="No annotations yet", 
+                                            bg='#3b3b3b', fg='lightgray', 
+                                            font=('Arial', self.panel_fonts.get('info', 10)))
+        self.rightAnnotationInfoLabel.pack(pady=2)
         
         
         # Always show selection control panel
@@ -785,7 +798,7 @@ class VideoSegmentEditor:
     def loadExistingAnnotations(self):
         """Load existing annotations for the current video from the summary file"""
         try:
-            program_dir = os.path.expanduser("~"),
+            program_dir = os.path.expanduser("~")
             summary_file = os.path.join(program_dir, "smoke_detection_annotations", "annotations_summary.json")
             
             if not os.path.exists(summary_file):
@@ -795,19 +808,19 @@ class VideoSegmentEditor:
                 return
             
             with open(summary_file, 'r') as f:
-                all_annotations = json.load(f)
+                self.all_annotations = json.load(f)
             
             # Load annotations for current video if they exist
             current_video_path = self.currentVideoFile
             video_annotations = None
             
             # Try exact path match first
-            if current_video_path in all_annotations:
-                video_annotations = all_annotations[current_video_path]
+            if current_video_path in self.all_annotations:
+                video_annotations = self.all_annotations[current_video_path]
             else:
                 # Try matching by filename only
                 current_filename = os.path.basename(current_video_path)
-                for video_path, annotations in all_annotations.items():
+                for video_path, annotations in self.all_annotations.items():
                     if os.path.basename(video_path) == current_filename:
                         video_annotations = annotations
                         break
@@ -900,23 +913,45 @@ class VideoSegmentEditor:
             
         # Update segment info
         self.updateSegmentInfo()
+
+    def extractSmokeStats(self):
+
+        smoke = 0
+        no_smoke = 0        
+        for video_file, video_annotations in self.all_annotations.items():
+                for ann in video_annotations.values():
+                    if isinstance(ann, dict) and 'has_smoke' in ann:
+                        if ann['has_smoke']:
+                            smoke += 1
+                        else:
+                            no_smoke += 1
+        
+        return smoke, no_smoke
         
     def updateSegmentInfo(self):
-        """Update segment information display"""
-        segment_frames = self.segmentEnd - self.segmentStart + 1
-        segment_duration = segment_frames / self.fps
+        """Update segment information display with smoke/no-smoke counts"""
         
+        # Calculate segment info
+        segment_frames = self.segmentEnd - self.segmentStart + 1
         segment_start_time = self._frame_to_time(self.segmentStart)
         segment_end_time = self._frame_to_time(self.segmentEnd)
+        segment_text = (f"Frames {self.segmentStart}-{self.segmentEnd} "
+                    f"({segment_frames} frames, {segment_start_time}-{segment_end_time})")
         
-        segment_text = f"Frames {self.segmentStart}-{self.segmentEnd} ({segment_frames} frames, {segment_start_time}-{segment_end_time})"
+        smoke, no_smoke = self.extractSmokeStats()
+        annotation_text =  (f"Annotations: {smoke} smoke, {no_smoke} no-smoke")
         
-        # Update timeline segment info
+        # Debug output
+        print(f"Segment info: {segment_text} | {annotation_text}")
+              
+        # Main segment info
         self.segmentInfoLabel.config(text=segment_text)
         
-        # Update right panel segment info if it exists
+        # Right panel labels (if they exist)
         if hasattr(self, 'rightSegmentInfoLabel'):
             self.rightSegmentInfoLabel.config(text=segment_text)
+        if hasattr(self, 'rightAnnotationInfoLabel'):
+            self.rightAnnotationInfoLabel.config(text=annotation_text)
         
     def onTimelineClick(self, event):
         """Handle timeline click for segment positioning"""
@@ -1976,19 +2011,19 @@ class VideoSegmentEditor:
                 return
             
             with open(summary_file, 'r') as f:
-                all_annotations = json.load(f)
+                self.all_annotations = json.load(f)
             
             # Get annotations for current video
             current_video_path = self.currentVideoFile
             video_annotations = None
             
             # Try to find annotations by exact path or just filename
-            if current_video_path in all_annotations:
-                video_annotations = all_annotations[current_video_path]
+            if current_video_path in self.all_annotations:
+                video_annotations = self.all_annotations[current_video_path]
             else:
                 # Try matching by filename only
                 current_filename = os.path.basename(current_video_path)
-                for video_path, annotations in all_annotations.items():
+                for video_path, annotations in self.all_annotations.items():
                     if os.path.basename(video_path) == current_filename:
                         video_annotations = annotations
                         break
@@ -1999,6 +2034,7 @@ class VideoSegmentEditor:
             
             # Format and display the annotations
             self.displayAnnotationHistory(video_annotations)
+            self.updateSegmentInfo()
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load annotation history: {str(e)}")
@@ -2015,11 +2051,6 @@ class VideoSegmentEditor:
             sorted_annotations.append((annotation_data.get('start_frame', 0), segment_key, annotation_data))
         
         sorted_annotations.sort(key=lambda x: x[0])
-        
-        # Calculate statistics
-        total_annotations = len(sorted_annotations)
-        smoke_count = sum(1 for _, _, data in sorted_annotations if data.get('has_smoke', False))
-        no_smoke_count = total_annotations - smoke_count
         
         # Display enhanced header with statistics
         video_name = os.path.basename(self.currentVideoFile) if self.currentVideoFile else "Unknown"
