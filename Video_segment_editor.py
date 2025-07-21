@@ -602,7 +602,7 @@ class VideoSegmentEditor:
         
         # Always show selection control panel
         self.selectionControlPanel.pack(fill=tk.X, pady=10)
-        
+
         # Review & Annotation Panel (moved to top)
         self.reviewAnnotationPanel = tk.LabelFrame(controlFrame, text="Smoke Annotation", 
                                                   font=('Arial', self.panel_fonts.get('panel_title', 12), 'bold'), 
@@ -684,9 +684,11 @@ class VideoSegmentEditor:
             
     def loadVideoFile(self):
         """Load a video file"""
+
         filename = filedialog.askopenfilename(
             title="Select a video file",
-            filetypes=Config.VIDEO_FILETYPES
+            initialdir=os.path.expanduser("~"),
+            filetypes=Config.VIDEO_FILETYPES,
         )
         
         if filename:
@@ -783,7 +785,7 @@ class VideoSegmentEditor:
     def loadExistingAnnotations(self):
         """Load existing annotations for the current video from the summary file"""
         try:
-            program_dir = os.path.dirname(os.path.abspath(__file__))
+            program_dir = os.path.expanduser("~"),
             summary_file = os.path.join(program_dir, "smoke_detection_annotations", "annotations_summary.json")
             
             if not os.path.exists(summary_file):
@@ -1690,8 +1692,8 @@ class VideoSegmentEditor:
             # Update status
             self.updateProcessingStatus("Creating output directories...")
             
-            # Use the program directory instead of video directory
-            program_dir = os.path.dirname(os.path.abspath(__file__))
+            # Use the user's home directory instead of the program directory
+            program_dir = os.path.expanduser("~")
             video_name = os.path.splitext(os.path.basename(self.currentVideoFile))[0] if self.currentVideoFile else "annotations"
             
             # Create a centralized output directory for all YOLO annotations in program folder
@@ -1784,7 +1786,7 @@ class VideoSegmentEditor:
         """Save all annotations to YOLO format text files in a centralized folder"""
         try:
             # Use the program directory instead of video directory
-            program_dir = os.path.dirname(os.path.abspath(__file__))
+            program_dir = os.path.expanduser("~")
             video_name = os.path.splitext(os.path.basename(self.currentVideoFile))[0] if self.currentVideoFile else "annotations"
             
             # Create a centralized output directory for all YOLO annotations in program folder
@@ -1966,7 +1968,7 @@ class VideoSegmentEditor:
         
         try:
             # Load annotations from summary file
-            program_dir = os.path.dirname(os.path.abspath(__file__))
+            program_dir = os.path.expanduser("~")
             summary_file = os.path.join(program_dir, "smoke_detection_annotations", "all_annotations_summary.json")
             
             if not os.path.exists(summary_file):
