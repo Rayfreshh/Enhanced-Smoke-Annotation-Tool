@@ -1,29 +1,4 @@
 #!/usr/bin/env python3
-"""
-Complete 3x3 Temporal Analysis Generator - Optimized for AI Training
-
-This module contains the core TemporalAnalysisGenerator class for generating 
-192x192 temporal analysis images from 64 standardized video frames (1920x1080). 
-Designed specifically for AI training data generation.
-
-Key Features:
-- Processes 64 frames from video segments  
-- Standardizes all frames to 1920x1080
-- Generates 3x3 grid temporal analysis (192x192 output)
-- 9 overlapping regions (R1-R9) with 40% coverage, 20% overlap
-- Independent region normalization for maximum pattern visibility
-- Each region treated as separate temporal data source
-
-Core Class:
-- TemporalAnalysisGenerator: Main class for generating temporal analysis images
-
-Usage:
-    generator = TemporalAnalysisGenerator()
-    temporal_image = generator.generate_from_frames(frames)
-
-Author: Saturation Analysis Team
-Date: 2025-07-16
-"""
 
 import cv2
 import numpy as np
@@ -38,33 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 class TemporalAnalysisGenerator:
-    """
-    Complete temporal analysis generator optimized for AI training data.
-    
-    This class processes 64 standardized video frames (1920x1080) and creates
-    192x192 temporal analysis images with 9 overlapping regions in a 3x3 grid.
-    
-    AI TRAINING OPTIMIZATIONS:
-    - Each region normalized independently for optimal contrast
-    - Regions treated as separate temporal data sources (not spatially connected)
-    - Maximum pattern visibility per region using full dynamic range
-    - No cross-region brightness dependencies
-    """
-    
     def __init__(self, 
                  frame_size: Tuple[int, int] = (1920, 1080),
                  num_regions: int = 9,
                  num_bins: int = 64,
                  temporal_length: int = 64):
-        """
-        Initialize the temporal analysis generator.
         
-        Args:
-            frame_size: Target frame dimensions (width, height)
-            num_regions: Number of regions in 3x3 grid (must be 9)
-            num_bins: Number of saturation histogram bins
-            temporal_length: Number of frames to process (should be 64)
-        """
+
         self.frame_size = frame_size
         self.num_regions = num_regions
         self.num_bins = num_bins
@@ -75,16 +30,10 @@ class TemporalAnalysisGenerator:
             raise ValueError("num_regions must be 9 for 3x3 grid")
         if self.temporal_length != 64:
             logger.warning(f"Recommended temporal_length is 64, got {temporal_length}")
-            
-        logger.info(f"Initialized TemporalAnalysisGenerator with {frame_size} frames - independent region normalization for AI training")
+        
     
     def define_overlapping_regions(self) -> List[Dict]:
-        """
-        Define 9 overlapping regions in a 3x3 grid with 40% coverage and 20% overlap.
-        
-        Returns:
-            List of region dictionaries with name and bounds
-        """
+
         regions = []
         frame_width, frame_height = self.frame_size
         
@@ -110,20 +59,10 @@ class TemporalAnalysisGenerator:
                     'col': col
                 })
         
-        logger.debug(f"Defined {len(regions)} overlapping regions")
         return regions
     
     def compute_saturation_histogram(self, frame: np.ndarray, region_bounds: Tuple[int, int, int, int]) -> np.ndarray:
-        """
-        Compute normalized saturation histogram for a region.
-        
-        Args:
-            frame: Input frame (BGR format)
-            region_bounds: (x_start, y_start, x_end, y_end)
-            
-        Returns:
-            Normalized histogram array (32 bins)
-        """
+
         x_start, y_start, x_end, y_end = region_bounds
         
         # Extract region and convert to HSV
@@ -140,15 +79,7 @@ class TemporalAnalysisGenerator:
         return hist_norm
     
     def process_frame_sequence(self, frames: List[np.ndarray]) -> List[List[np.ndarray]]:
-        """
-        Process a sequence of frames to extract regional saturation histograms.
-        
-        Args:
-            frames: List of BGR frames (should be 64 frames)
-            
-        Returns:
-            List of region histories, each containing temporal histograms
-        """
+
         if len(frames) != self.temporal_length:
             logger.warning(f"Expected {self.temporal_length} frames, got {len(frames)}")
         
@@ -173,46 +104,11 @@ class TemporalAnalysisGenerator:
                 hist = self.compute_saturation_histogram(frame, region['bounds'])
                 region_histories[region_idx].append(hist)
         
-        logger.info(f"Processed {len(standardized_frames)} frames across {len(regions)} regions")
+
         return region_histories
     
     def create_3x3_temporal_grid(self, region_histories: List[List[np.ndarray]]) -> np.ndarray:
-        """
-        Create a 192x192 temporal analysis image with 3x3 grid layout.
-        
-        OPTIMIZED FOR AI TRAINING - INDEPENDENT REGION PROCESSING:
-        - Each region normalized independently for optimal contrast
-        - Regions treated as separate temporal data sources (not spatially connected)
-        - Individual normalization ensures maximum pattern visibility per region
-        - Each region uses full dynamic range (0-255) for best AI feature detection
-        
-        PERFORMANCE NOTES:
-        - Single-pass approach: Each region processed independently
-        - No cross-region dependencies - optimal for parallel processing
-        - Memory usage: Processes regions sequentially for efficiency
-        
-        ROBUSTNESS FEATURES:
-        - Input validation for data structure consistency
-        - Handles missing/empty data with zero-padding
-        - Dimension validation and padding/clamping for both axes
-        - Error recovery with fallback zero regions
-        
-        Each cell is 64x64 pixels representing one region's temporal data:
-        - 64 frames (temporal axis - rows)
-        - 64 histogram bins (saturation axis - columns)  
-        - Independent normalization: each region gets full 0-255 range
-        - Regions are separate temporal data sources, not spatially connected
-        
-        Args:
-            region_histories: List of temporal histograms for each region
-                             Each region contains list of 1D histogram arrays
-            
-        Returns:
-            192x192 grayscale temporal analysis image (independent region normalization)
-            
-        Raises:
-            ValueError: If input data is invalid or inconsistent
-        """
+
         # Input validation
         if not region_histories:
             raise ValueError("region_histories cannot be empty")
@@ -266,8 +162,7 @@ class TemporalAnalysisGenerator:
         
         # Process each region independently for optimal AI training
         all_processed_regions = []
-        
-        logger.debug(f"Processing {len(validated_regions)} regions - independent normalization for maximum contrast per region")
+    
         
         for i, region_history in enumerate(validated_regions):
             try:
@@ -361,18 +256,7 @@ class TemporalAnalysisGenerator:
                 
                 # No resize needed - data is already exactly 64x64
                 region_resized = region_padded
-                
-                # Debug: Verify independent region normalization
-                max_val = np.max(region_resized)
-                min_val = np.min(region_resized)
-                original_min = region_raw.min() if region_raw.size > 0 else 0
-                original_max = region_raw.max() if region_raw.size > 0 else 0
-                dynamic_range = max_val - min_val
-                logger.debug(f"Region {i+1}: final_range={min_val}-{max_val}, dynamic_range={dynamic_range}")
-                logger.debug(f"Region {i+1}: original_range={original_min:.6f}-{original_max:.6f}")
-                logger.debug(f"Region {i+1}: independent_normalization=True, uses_full_contrast={max_val==255 or original_max==original_min}")
-                logger.debug(f"Region {i+1}: final_shape={region_padded.shape}, expected={expected_shape}")
-                
+
                 # Place in grid using safe indexing (never exceeds bounds)
                 output_image[y_start:y_end, x_start:x_end] = region_resized
                 
@@ -385,19 +269,9 @@ class TemporalAnalysisGenerator:
                 x_end = x_start + region_size
                 output_image[y_start:y_end, x_start:x_end] = 0
         
-        logger.info("Generated 192x192 temporal analysis grid - independent region normalization for maximum pattern visibility")
         return output_image
     
     def generate_from_frames(self, frames: List[np.ndarray]) -> np.ndarray:
-        """
-        Main interface: Generate temporal analysis from frame list.
-        
-        Args:
-            frames: List of BGR frames (preferably 64 frames)
-            
-        Returns:
-            192x192 temporal analysis image
-        """
         try:
             # Process frames to get regional histories
             region_histories = self.process_frame_sequence(frames)
