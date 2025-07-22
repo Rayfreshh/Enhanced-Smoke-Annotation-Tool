@@ -190,6 +190,8 @@ class VideoSegmentEditor:
         self.playbackTimer = None
         self.pausedFrame = None
         self.playbackStartTime = None
+        self.lastClickedTag = None
+        self.lastClickedWasSmoke = None
         
     def initAnnotationProperties(self):
         """Initialize annotation-related properties"""
@@ -399,7 +401,7 @@ class VideoSegmentEditor:
                                              font=('Arial', self.panelFonts.get('info', 10), 'bold'))
         self.segmentInfoLabel.pack(pady=5)
 
-        self.annotationInfoLabel = tk.Label(segmentInfoFrame, text="Annotation information:", 
+        self.annotationInfoLabel = tk.Label(segmentInfoFrame, text="Total annotated segments:", 
                 bg='#3b3b3b', fg='white', 
                 font=('Arial', self.panelFonts.get('panelTitle', 12), 'bold'))
         self.annotationInfoLabel.pack(pady=5)
@@ -976,16 +978,27 @@ class VideoSegmentEditor:
         if smoke == 0 and noSmoke == 0:
             annotationText = "No annotations yet"
         else:
-            annotationText =  (f"Annotations — Smoke: {smoke}, No Smoke: {noSmoke}")
+            annotationText =  (f"Smoke: {smoke}, No Smoke: {noSmoke}")
         
         # Right panel labels (if they exist)
         if hasattr(self, 'segmentInfoLabel'):
             self.segmentInfoLabel.config(text=segmentText)
         if hasattr(self, 'smokeInfoLabel'):
             self.smokeInfoLabel.config(text=annotationText)
+
+    def resetHistorySelection(self):
+        """Reset history selection to default color"""
+        if hasattr(self, 'historyText') and self.lastClickedTag:
+            default_color = "#d4af37" if self.lastClickedWasSmoke else "#87ceeb"
+            self.historyText.tag_config(self.lastClickedTag, foreground=default_color, background="", underline=True)
+            self.lastClickedTag = None
+            self.lastClickedWasSmoke = False
         
     def onTimelineClick(self, event):
         """Handle timeline click for segment positioning"""
+
+        self.resetHistorySelection()  # Reset any history selection
+
         if not self.videoCap or self.workflowState != "selection":
             return
         
@@ -1119,27 +1132,24 @@ class VideoSegmentEditor:
     # Specific movement methods using the generic method
     def moveSegment64Back(self):
         """Move segment backward by 64 frames"""
+        self.resetHistorySelection()
         self.moveSegment(Constants.MEDIUM_MOVE, 'backward')
         
     def moveSegment640Back(self):
         """Move segment backward by 640 frames"""
+        self.resetHistorySelection()
         self.moveSegment(Constants.LARGE_MOVE, 'backward')
         
     def moveSegment64Forward(self):
         """Move segment forward by 64 frames"""
+        self.resetHistorySelection()
         self.moveSegment(Constants.MEDIUM_MOVE, 'forward')
         
     def moveSegment640Forward(self):
         """Move segment forward by 640 frames"""
+        self.resetHistorySelection()
         self.moveSegment(Constants.LARGE_MOVE, 'forward')
-        
-    def moveSegmentBack(self):
-        """Move segment backward by 32 frames"""
-        self.moveSegment(Constants.SMALL_MOVE, 'backward')
-        
-    def moveSegmentForward(self):
-        """Move segment forward by 32 frames"""
-        self.moveSegment(Constants.SMALL_MOVE, 'forward')
+    
         
     def displayFrame(self, frameNumber):
         """Display a specific frame with caching optimization"""
@@ -2013,8 +2023,6 @@ class VideoSegmentEditor:
         except Exception as e:
             print(f"Cleanup error: {e}")
     
-  
-    
     def displayAnnotationHistory(self, annotations):
         """Display annotation history in the text widget with enhanced formatting and information."""
         self.historyText.config(state=tk.NORMAL)
@@ -2063,8 +2071,8 @@ class VideoSegmentEditor:
                 
                 # Bind click event
                 self.historyText.tag_bind(tagName, "<Button-1>", 
-                                         lambda e, frame=startFrame: self.jumpToHistoryFrame(frame))
-                
+                         lambda e, frame=startFrame, tag=tagName, smoke=hasSmoke: self.jumpToHistoryFrame(frame, smoke, tag))
+
                 # Enhanced styling based on annotation type with neutral but visible colors
                 if hasSmoke:
                     self.historyText.tag_config(tagName, foreground="#d4af37", underline=True)  # Gold/amber for smoke
@@ -2074,15 +2082,19 @@ class VideoSegmentEditor:
         
         self.historyText.config(state=tk.DISABLED)
     
-    def displayHistoryMessage(self, message):
-        """Display a simple message in the history text widget."""
-        self.historyText.config(state=tk.NORMAL)
-        self.historyText.delete(1.0, tk.END)
-        self.historyText.insert(tk.END, message)
-        self.historyText.config(state=tk.DISABLED)
-    
-    def jumpToHistoryFrame(self, targetFrame):
+    def jumpToHistoryFrame(self, targetFrame, hasSmoke, tagName):
         """Jump to a frame from the annotation history."""
+
+    # Reset previous tag style
+        self.resetHistorySelection()
+
+        # Highlight current tag with background, keep original foreground
+        self.historyText.tag_config(tagName, background="#585858")
+
+        # Update state
+        self.lastClickedTag = tagName
+        self.lastClickedWasSmoke = hasSmoke
+
         if not self.videoCap:
             return
         
@@ -2108,6 +2120,13 @@ class VideoSegmentEditor:
             
         except Exception as e:
             print(f"Error jumping to history frame {targetFrame}: {e}")
+
+    def displayHistoryMessage(self, message):
+        """Display a simple message in the history text widget."""
+        self.historyText.config(state=tk.NORMAL)
+        self.historyText.delete(1.0, tk.END)
+        self.historyText.insert(tk.END, message)
+        self.historyText.config(state=tk.DISABLED)
     
     def onKeyPress(self, event):
         """Handle keyboard shortcuts"""
@@ -2122,9 +2141,9 @@ class VideoSegmentEditor:
         elif key == 'r':
             self.replaySegment()
         elif key == 'left':
-            self.moveSegmentBack()
+            self.moveSegment64Back()
         elif key == 'right':
-            self.moveSegmentForward()
+            self.moveSegment64Forward()
 
 def main():
     """Main function to run the application"""
