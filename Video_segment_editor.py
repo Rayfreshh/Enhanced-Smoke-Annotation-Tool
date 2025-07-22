@@ -421,16 +421,11 @@ class VideoSegmentEditor:
         
         reviewAnnotationInner = tk.Frame(self.reviewAnnotationPanel, bg='#3b3b3b')
         reviewAnnotationInner.pack(padx=8, pady=8)
-        
-        # Instructions
-        self.instructionMainLabel = tk.Label(reviewAnnotationInner, text="After reviewing the segment:", 
-                bg='#3b3b3b', fg='white', 
-                font=('Arial', self.panelFonts.get('instructionMain', 14), 'bold'))
-        self.instructionMainLabel.pack(pady=8)
+    
         
         self.instructionSubLabel = tk.Label(reviewAnnotationInner, text="Is there smoke visible at the end\n of this 64-frame segment?", 
-                bg='#3b3b3b', fg='lightgray', 
-                font=('Arial', self.panelFonts.get('instructionSub', 12)))
+                bg='#3b3b3b', fg='#00FFFF', 
+                font=('Arial', self.panelFonts.get('questionSub', 14), 'bold'), state='disabled')
         self.instructionSubLabel.pack(pady=8)
         
         # Watch requirement notice
@@ -542,6 +537,7 @@ class VideoSegmentEditor:
             'panelTitle': 15,      # LabelFrame titles
             'instructionMain': 18, # Main instruction text
             'instructionSub': 15,  # Sub instruction text
+            'questionSub': 20,     # Question subtext
             'notice': 14,           # Notice text
             'info': 15,             # Info labels
             'button': 20,           # Annotation buttons
@@ -603,10 +599,10 @@ class VideoSegmentEditor:
         if hasattr(self, 'instructionMainLabel'):
             self.instructionMainLabel.config(font=('Arial', self.panelFonts['instructionMain'], 'bold'))
         if hasattr(self, 'instructionSubLabel'):
-            self.instructionSubLabel.config(font=('Arial', self.panelFonts['instructionSub']))
+            self.instructionSubLabel.config(font=('Arial', self.panelFonts['questionSub'], 'bold'))
         if hasattr(self, 'watchNoticeLabel'):
             self.watchNoticeLabel.config(font=('Arial', self.panelFonts['notice'], 'italic'))
-
+        
         # Update info labels
         if hasattr(self, 'selectionInfoLabel'):
             self.selectionInfoLabel.config(font=('Arial', self.panelFonts['panelTitle'], 'bold'))
@@ -1666,15 +1662,17 @@ class VideoSegmentEditor:
         
     def updateAnnotationButtons(self):
         """Update annotation button states based on whether segment has been watched"""
-        if hasattr(self, 'smokeBtn') and hasattr(self, 'noSmokeBtn'):
+        if hasattr(self, 'smokeBtn') and hasattr(self, 'noSmokeBtn') and hasattr(self, 'instructionSubLabel'):
             if self.segmentWatched:
                 self.smokeBtn.config(state='normal')
                 self.noSmokeBtn.config(state='normal')
+                self.instructionSubLabel.config(state='normal')
                 if hasattr(self, 'watchNoticeLabel'):
                     self.watchNoticeLabel.config(text="Segment watched - annotation enabled", fg='lightgreen')
             else:
                 self.smokeBtn.config(state='disabled')
                 self.noSmokeBtn.config(state='disabled')
+                self.instructionSubLabel.config(state='disabled')
                 if hasattr(self, 'watchNoticeLabel'):
                     self.watchNoticeLabel.config(text="Please watch the segment first to enable annotation", fg='orange')
                     
