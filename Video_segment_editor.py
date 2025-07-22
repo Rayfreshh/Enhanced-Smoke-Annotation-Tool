@@ -1725,7 +1725,7 @@ class VideoSegmentEditor:
                 self.annotations[self.currentVideoFile] = {}
             
             # Create segment key
-            segmentKey = f"frames_{self.segmentStart:06d}_{self.segmentEnd:06d}"
+            segmentKey = f"frames_{self.segmentStart:06d}_{self.segmentEnd:06d}_{'smoke' if hasSmoke else 'noSmoke'}"
             
             # Store annotation data
             self.annotations[self.currentVideoFile][segmentKey] = {
