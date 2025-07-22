@@ -1407,9 +1407,9 @@ class VideoSegmentEditor:
             self.showLoadingIndicator()
             
             # Clear cache for old frames to manage memory
-            frames_to_remove = [f for f in self.frameCache.keys() 
+            framesToRemove = [f for f in self.frameCache.keys() 
                               if f < self.segmentStart or f > self.segmentEnd]
-            for frameNum in frames_to_remove:
+            for frameNum in framesToRemove:
                 del self.frameCache[frameNum]
                 if frameNum in self.imageCache:
                     del self.imageCache[frameNum]
@@ -1725,7 +1725,7 @@ class VideoSegmentEditor:
                 self.annotations[self.currentVideoFile] = {}
             
             # Create segment key
-            segmentKey = f"frames_{self.segmentStart:06d}_{self.segmentEnd:06d}_{'smoke' if hasSmoke else 'noSmoke'}"
+            segmentKey = f"{self.segmentStart:06d}_{self.segmentEnd:06d}"
             
             # Store annotation data
             self.annotations[self.currentVideoFile][segmentKey] = {
@@ -1734,23 +1734,6 @@ class VideoSegmentEditor:
                 "hasSmoke": hasSmoke,
             }
             
-            # Save ONLY the current segment (not all segments)
-            self.saveCurrentSegmentOnly(hasSmoke, segmentKey)
-            
-            # Automatically reload annotation history after saving (if history widget exists)
-            if hasattr(self, 'historyText'):
-                try:
-                    self.loadAnnotationHistory()
-                    self.loadVideoAnnotations()
-                except Exception as history_error:
-                    print(f"Note: Could not auto-reload history: {history_error}")
-            
-        except Exception as e:
-            print(f"Error saving annotation: {e}")
-            
-    def saveCurrentSegmentOnly(self, hasSmoke, segmentKey):
-        """Save only the current segment annotation and temporal analysis"""
-        try:
             # Update status
             self.updateProcessingStatus("Creating output directories...")
             
@@ -1768,7 +1751,7 @@ class VideoSegmentEditor:
                     os.makedirs(directory)
             
             # Create unique filename with video name prefix
-            uniqueSegmentKey = f"{videoName}_{segmentKey}"
+            uniqueSegmentKey = f"{'smoke' if hasSmoke else 'nosmoke'}_{videoName}_{segmentKey}"
             
             # Update status
             self.updateProcessingStatus("Generating temporal analysis image...")
@@ -1803,10 +1786,18 @@ class VideoSegmentEditor:
             
             # Final status update
             self.updateProcessingStatus("Finalizing annotation...")
+
+            
+            # Automatically reload annotation history after saving (if history widget exists)
+            if hasattr(self, 'historyText'):
+                try:
+                    self.loadAnnotationHistory()
+                    self.loadVideoAnnotations()
+                except Exception as history_error:
+                    print(f"Note: Could not auto-reload history: {history_error}")
             
         except Exception as e:
-            print(f"Error saving current segment: {e}")
-            raise  # Re-raise to be caught by the calling method
+            print(f"Error saving annotation: {e}")
             
     def updateSummaryFileWithCurrentSegment(self, yoloDir, uniqueSegmentKey, hasSmoke):
         """Update summary file with only the current segment"""
@@ -1887,7 +1878,7 @@ class VideoSegmentEditor:
             classesFile = os.path.join(yoloDir, Config.classesFile)
             with open(classesFile, 'w') as f:
                 f.write("smoke\n")
-                f.write("noSmoke\n")
+                f.write("no_smoke\n")
             
             # Save or update comprehensive summary JSON file with all videos
             summaryFile = os.path.join(yoloDir, Config.summaryFile)
