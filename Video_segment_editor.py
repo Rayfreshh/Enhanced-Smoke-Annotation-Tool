@@ -120,7 +120,6 @@ class VideoSegmentEditor:
         self.initSegmentProperties()
         self.initAnnotationProperties()
         self.initPerformanceVariables()
-        
         self.setupGui()
         self.bindEvents()
         
@@ -178,7 +177,7 @@ class VideoSegmentEditor:
         """Initialize video-related properties"""
         self.lastDir = os.path.expanduser("~")  # default to home
         self.videoCap = None
-        self.currentVideoFile = None
+        self.videoName = None
         self.totalFrames = 0
         self.currentFrame = 0
         self.fps = 25
@@ -710,7 +709,7 @@ class VideoSegmentEditor:
             self.cleanupPreviousVideo()
             
             self.videoCap = cv2.VideoCapture(filename)
-            self.currentVideoFile = filename
+            self.videoName = os.path.basename(filename)
             
             if not self.videoCap.isOpened():
                 messagebox.showerror("Error", "Could not open video file")
@@ -719,7 +718,7 @@ class VideoSegmentEditor:
             self.initializeVideoProperties()
             self.resetSegmentState()
             self.resetPerformanceCache()
-            self.updateVideoInfoDisplay(filename)
+            self.updateVideoInfoDisplay()
             self.enableVideoControls()
             
             # Load existing annotations for this video
@@ -751,8 +750,8 @@ class VideoSegmentEditor:
             
             if not os.path.exists(summaryFile):
                 # No existing annotations file, initialize empty
-                if self.currentVideoFile not in self.annotations:
-                    self.annotations[self.currentVideoFile] = {}
+                if self.videoName not in self.annotations:
+                    self.annotations[self.videoName] = {}
                 return
             
             with open(summaryFile, 'r') as f:
@@ -761,52 +760,51 @@ class VideoSegmentEditor:
             videoAnnotations = None
             
             # Try exact path match first
-            if self.currentVideoFile in self.allAnnotations:
-                videoAnnotations = self.allAnnotations[self.currentVideoFile]
+            if self.videoName in self.allAnnotations:
+                videoAnnotations = self.allAnnotations[self.videoName]
             else:
                 # Try matching by filename only
-                current_filename = os.path.basename(self.currentVideoFile)
                 for video_path, annotations in self.allAnnotations.items():
-                    if os.path.basename(video_path) == current_filename:
+                    if os.path.basename(video_path) == self.videoName:
                         videoAnnotations = annotations
                         break
             
             # Initialize or update annotations for current video
-            if self.currentVideoFile not in self.annotations:
-                self.annotations[self.currentVideoFile] = {}
-            
+            if self.videoName not in self.annotations:
+                self.annotations[self.videoName] = {}
+
             if videoAnnotations:
-                self.annotations[self.currentVideoFile] = videoAnnotations.copy()
+                self.annotations[self.videoName] = videoAnnotations.copy()
             else:
-                print(f"No existing annotations found for {os.path.basename(self.currentVideoFile)}")
-                
+                print(f"No existing annotations found for {os.path.basename(self.videoName)}")
+
         except Exception as e:
             print(f"Error loading existing annotations: {e}")
             # Ensure annotations dict is initialized even if loading fails
-            if self.currentVideoFile not in self.annotations:
-                self.annotations[self.currentVideoFile] = {}
+            if self.videoName not in self.annotations:
+                self.annotations[self.videoName] = {}
 
     def loadVideoAnnotations(self):
                 # Get annotations for current video
-        if not self.currentVideoFile:
+        if not self.videoName:
             messagebox.showwarning("No Video", "Please load a video first.")
             return
         
         videoAnnotations = None
         
         # Try to find annotations by exact path or just filename
-        if self.currentVideoFile in self.allAnnotations:
-            videoAnnotations = self.allAnnotations[self.currentVideoFile]
+        if self.videoName in self.allAnnotations:
+            videoAnnotations = self.allAnnotations[self.videoName]
         else:
             # Try matching by filename only
-            current_filename = os.path.basename(self.currentVideoFile)
+            current_filename = os.path.basename(self.videoName)
             for video_path, annotations in self.allAnnotations.items():
                 if os.path.basename(video_path) == current_filename:
                     videoAnnotations = annotations
                     break
         
         if not videoAnnotations:
-            self.displayHistoryMessage(f"No annotations found for video: {os.path.basename(self.currentVideoFile)}")
+            self.displayHistoryMessage(f"No annotations found for video: {self.videoName}")
             return
         
         # Format and display the annotations
@@ -858,11 +856,10 @@ class VideoSegmentEditor:
         self.frameCache = {}
         self.imageCache = {}
         
-    def updateVideoInfoDisplay(self, filename):
+    def updateVideoInfoDisplay(self):
         """Update video info display"""
-        videoName = os.path.basename(filename)
         duration = self.totalFrames / self.fps
-        self.videoInfoLabel.config(text=f"{videoName} | {self.totalFrames} frames | {duration:.1f}s | {self.fps:.1f} FPS")
+        self.videoInfoLabel.config(text=f"{self.videoName} | {self.totalFrames} frames | {duration:.1f}s | {self.fps:.1f} FPS")
         
     def enableVideoControls(self):
         """Enable video control buttons"""
@@ -960,9 +957,9 @@ class VideoSegmentEditor:
         smoke = 0
         noSmoke = 0    
         totalPerVideo = 0    
-        for video_file, videoAnnotations in self.allAnnotations.items():
+        for videoFile, videoAnnotations in self.allAnnotations.items():
                 for ann in videoAnnotations.values():
-                    if video_file == self.currentVideoFile:
+                    if videoFile == self.videoName:
                         totalPerVideo += 1
                     if isinstance(ann, dict) and 'hasSmoke' in ann:
                         if ann['hasSmoke']:
@@ -986,7 +983,7 @@ class VideoSegmentEditor:
         # Update annotation text
         if smoke == 0 and noSmoke == 0:
             annotationText = "No annotations yet"
-        elif self.currentVideoFile == None:
+        elif self.videoName == None:
             annotationText = (f"Smoke: {smoke}, No Smoke: {noSmoke}")
         else:
             annotationText = (f"Smoke: {smoke}, No Smoke: {noSmoke}\n"
@@ -1749,18 +1746,18 @@ class VideoSegmentEditor:
         
     def saveAnnotation(self, hasSmoke):
         """Save annotation for current segment in the annotations dictionary"""
-        if not self.currentVideoFile:
+        if not self.videoName:
             return
             
         try:        
-            if self.currentVideoFile not in self.annotations:
-                self.annotations[self.currentVideoFile] = {}
-            
+            if self.videoName not in self.annotations:
+                self.annotations[self.videoName] = {}
+
             # Create segment key
             segmentKey = f"{self.segmentStart:06d}_{self.segmentEnd:06d}"
             
             # Store annotation data
-            self.annotations[self.currentVideoFile][segmentKey] = {
+            self.annotations[self.videoName][segmentKey] = {
                 "startFrame": self.segmentStart,
                 "endFrame": self.segmentEnd,
                 "hasSmoke": hasSmoke,
@@ -1771,7 +1768,7 @@ class VideoSegmentEditor:
             
             # Use the user's home directory instead of the program directory
             programDir = os.path.expanduser("~")
-            videoName = os.path.splitext(os.path.basename(self.currentVideoFile))[0] if self.currentVideoFile else "annotations"
+            baseVideoName = os.path.splitext(os.path.basename(self.videoName))[0]
             
             # Create a centralized output directory for all YOLO annotations in program folder
             yoloDir = os.path.join(programDir, "smoke_detection_annotations")
@@ -1783,10 +1780,10 @@ class VideoSegmentEditor:
                     os.makedirs(directory)
             
             # Create unique filename with video name prefix
-            uniqueSegmentKey = f"{'smoke' if hasSmoke else 'nosmoke'}_{videoName}_{segmentKey}"
+            uniqueSegmentKey = f"{'smoke' if hasSmoke else 'nosmoke'}_{baseVideoName}_{segmentKey}"
 
             #delete file with oposite annotation if it exists
-            oppositeSegmentKey = f"{'nosmoke' if hasSmoke else 'smoke'}_{videoName}_{segmentKey}"
+            oppositeSegmentKey = f"{'nosmoke' if hasSmoke else 'smoke'}_{baseVideoName}_{segmentKey}"
 
             # Update status
             self.updateProcessingStatus("Generating temporal analysis image...")
@@ -1854,18 +1851,18 @@ class VideoSegmentEditor:
                     allAnnotations = {}
             
             # Initialize current video in allAnnotations if it doesn't exist
-            if self.currentVideoFile not in allAnnotations:
-                allAnnotations[self.currentVideoFile] = {}
-            
+            if self.videoName not in allAnnotations:
+                allAnnotations[self.videoName] = {}
+
             # Add/update only the current segment annotation (preserve existing ones)
-            if self.currentVideoFile and self.currentVideoFile in self.annotations:
-                current_videoAnnotations = self.annotations[self.currentVideoFile]
+            if self.videoName in self.annotations:
+                current_videoAnnotations = self.annotations[self.videoName]
                 # Find the segment key that matches our current segment
                 for segmentKey, annotation_data in current_videoAnnotations.items():
                     if (annotation_data.get('startFrame') == self.segmentStart and 
                         annotation_data.get('endFrame') == self.segmentEnd):
                         # Update only this specific segment, preserve all others
-                        allAnnotations[self.currentVideoFile][segmentKey] = annotation_data
+                        allAnnotations[self.videoName][segmentKey] = annotation_data
                         break
             
             # Save updated summary (preserves all existing annotations from all videos)
@@ -1963,8 +1960,7 @@ class VideoSegmentEditor:
         sorted_annotations.sort(key=lambda x: x[0])
         
         # Display enhanced header with statistics
-        videoName = os.path.basename(self.currentVideoFile) if self.currentVideoFile else "Unknown"
-        header = f"Annotation History: {videoName}\n"
+        header = f"Annotation History: {self.videoName}\n"
         header += "=" * 60 + "\n\n"
         
         # Add instructions
