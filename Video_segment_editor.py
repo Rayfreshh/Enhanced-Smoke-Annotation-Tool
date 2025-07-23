@@ -394,22 +394,22 @@ class VideoSegmentEditor:
         self.selectionInfoLabel = tk.Label(segmentInfoFrame, text="Current Selection:", 
                 bg='#3b3b3b', fg='white', 
                 font=('Arial', self.panelFonts.get('panelTitle', 12), 'bold'))
-        self.selectionInfoLabel.pack(pady=5)
+        self.selectionInfoLabel.pack(pady=(5, 2))
         
         self.segmentInfoLabel = tk.Label(segmentInfoFrame, text="Frames 0-63 (64 frames)", 
                                              bg='#3b3b3b', fg='lightgreen', 
                                              font=('Arial', self.panelFonts.get('info', 10), 'bold'))
-        self.segmentInfoLabel.pack(pady=5)
+        self.segmentInfoLabel.pack()
 
         self.annotationInfoLabel = tk.Label(segmentInfoFrame, text="Total annotated segments:", 
                 bg='#3b3b3b', fg='white', 
                 font=('Arial', self.panelFonts.get('panelTitle', 12), 'bold'))
-        self.annotationInfoLabel.pack(pady=5)
+        self.annotationInfoLabel.pack(pady=(5, 2))
 
         self.smokeInfoLabel = tk.Label(segmentInfoFrame, text="No annotations yet", 
                                              bg='#3b3b3b', fg='lightgreen',
                                              font=('Arial', self.panelFonts.get('info', 10), 'bold'))
-        self.smokeInfoLabel.pack(pady=5)
+        self.smokeInfoLabel.pack()
         
         # Always show selection control panel
         self.selectionControlPanel.pack(fill=tk.X, pady=10)
@@ -948,16 +948,19 @@ class VideoSegmentEditor:
     def extractSmokeStats(self):
 
         smoke = 0
-        noSmoke = 0        
+        noSmoke = 0    
+        totalPerVideo = 0    
         for video_file, videoAnnotations in self.allAnnotations.items():
                 for ann in videoAnnotations.values():
+                    if video_file == self.currentVideoFile:
+                        totalPerVideo += 1
                     if isinstance(ann, dict) and 'hasSmoke' in ann:
                         if ann['hasSmoke']:
                             smoke += 1
                         else:
                             noSmoke += 1
         
-        return smoke, noSmoke
+        return smoke, noSmoke, totalPerVideo
         
     def updateSegmentInfo(self):
         """Update segment information display with smoke/no-smoke counts"""
@@ -969,13 +972,16 @@ class VideoSegmentEditor:
         segmentText = (f"Frames {self.segmentStart}-{self.segmentEnd} "
                     f"({segmentFrames} frames, {segmentStartTime}-{segmentEndTime})")
         
-        smoke, noSmoke = self.extractSmokeStats()
+        smoke, noSmoke, annotationsPerVideo = self.extractSmokeStats()
         # Update annotation text
         if smoke == 0 and noSmoke == 0:
             annotationText = "No annotations yet"
+        elif self.currentVideoFile == None:
+            annotationText = (f"Smoke: {smoke}, No Smoke: {noSmoke}")
         else:
-            annotationText =  (f"Smoke: {smoke}, No Smoke: {noSmoke}")
-        
+            annotationText = (f"Smoke: {smoke}, No Smoke: {noSmoke}\n"
+                                f"Annotations in this video: {annotationsPerVideo}")
+            
         # Right panel labels (if they exist)
         if hasattr(self, 'segmentInfoLabel'):
             self.segmentInfoLabel.config(text=segmentText)
