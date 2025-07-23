@@ -1806,15 +1806,23 @@ class VideoSegmentEditor:
             
             # Create unique filename with video name prefix
             uniqueSegmentKey = f"{'smoke' if hasSmoke else 'nosmoke'}_{videoName}_{segmentKey}"
-            
+
+            #delete file with oposite annotation if it exists
+            oppositeSegmentKey = f"{'nosmoke' if hasSmoke else 'smoke'}_{videoName}_{segmentKey}"
+
             # Update status
             self.updateProcessingStatus("Generating temporal analysis image...")
             
             # Generate and save temporal analysis image (192x192) for CURRENT segment only
-            self.saveSegmentTemporalAnalysis(self.segmentStart, self.segmentEnd, uniqueSegmentKey, imagesDir)
+            self.saveSegmentTemporalAnalysis(self.segmentStart, self.segmentEnd, uniqueSegmentKey, oppositeSegmentKey, imagesDir)
             
             # Update status
             self.updateProcessingStatus("Creating YOLO label file...")
+
+            oppositeLabelFile = os.path.join(labelsDir, f"{oppositeSegmentKey}.txt")
+
+            if os.path.exists(oppositeLabelFile):
+                os.remove(oppositeLabelFile)
             
             # Create YOLO format label file for CURRENT segment only
             labelFile = os.path.join(labelsDir, f"{uniqueSegmentKey}.txt")
@@ -1888,115 +1896,8 @@ class VideoSegmentEditor:
                 
         except Exception as e:
             print(f"Error updating summary file: {e}")
-            
-    def saveAnnotationsToFile(self):
-        """Save all annotations to YOLO format text files in a centralized folder"""
-        try:
-            # Use the program directory instead of video directory
-            programDir = os.path.expanduser("~")
-            videoName = os.path.splitext(os.path.basename(self.currentVideoFile))[0] if self.currentVideoFile else "annotations"
-            
-            # Create a centralized output directory for all YOLO annotations in program folder
-            yoloDir = os.path.join(programDir, "smoke_detection_annotations")
-            imagesDir = os.path.join(yoloDir, "images")
-            labelsDir = os.path.join(yoloDir, "labels")
-            
-            for directory in [yoloDir, imagesDir, labelsDir]:
-                if not os.path.exists(directory):
-                    os.makedirs(directory)
-            
-            # Save each segment as YOLO annotation and corresponding temporal analysis image
-            if self.currentVideoFile in self.annotations:
-                for segmentKey, annotation in self.annotations[self.currentVideoFile].items():
-                    startFrame = annotation["startFrame"]
-                    endFrame = annotation["endFrame"]
-                    hasSmoke = annotation["hasSmoke"]
-                    
-                    # Create unique filenames with video name prefix
-                    uniqueSegmentKey = f"{videoName}_{segmentKey}"
-                    
-                    # Generate and save temporal analysis image (192x192) instead of single frame
-                    self.saveSegmentTemporalAnalysis(startFrame, endFrame, uniqueSegmentKey, imagesDir)
-                    
-                    # Create YOLO format label file
-                    labelFile = os.path.join(labelsDir, f"{uniqueSegmentKey}.txt")
-                    
-                    with open(labelFile, 'w') as f:
-                        if hasSmoke:
-                            f.write("0 0.5 0.5 1.0 1.0\n")
-                        else:
-                            f.write("1 0.5 0.5 1.0 1.0\n")
-                    
-            
-            # Save or update class names file
-            classesFile = os.path.join(yoloDir, Config.classesFile)
-            with open(classesFile, 'w') as f:
-                f.write("smoke\n")
-                f.write("no_smoke\n")
-            
-            # Save or update comprehensive summary JSON file with all videos
-            summaryFile = os.path.join(yoloDir, Config.summaryFile)
-            
-            # Load existing annotations if file exists
-            allAnnotations = {}
-            if os.path.exists(summaryFile):
-                try:
-                    with open(summaryFile, 'r') as f:
-                        allAnnotations = json.load(f)
-                except:
-                    allAnnotations = {}
-            
-            # Update with current video annotations
-            if self.currentVideoFile:
-                allAnnotations[self.currentVideoFile] = self.annotations[self.currentVideoFile]
-            
-            
-            # Create a simple dataset info file
-            datasetInfoFile = os.path.join(yoloDir, "dataset_info.txt")
-            with open(datasetInfoFile, 'w') as f:
-                f.write("Smoke Detection YOLO Dataset - Temporal Analysis\n")
-                f.write("="*50 + "\n\n")
-                f.write("Directory Structure:\n")
-                f.write("- images/: Contains 192x192 temporal analysis images from 64-frame segments\n")
-                f.write("- labels/: Contains YOLO format annotation files\n")
-                f.write(f'- "{Config.classesFile}": Class names (smoke, noSmoke)\n\n')
-                f.write("Image Format:\n")
-                f.write("- Size: 192x192 pixels\n")
-                f.write("- Type: Temporal saturation analysis (grayscale)\n")
-                f.write("- Source: 64 consecutive video frames per image\n")
-                f.write("- Grid: 3x3 regions with 40% coverage and 20% overlap\n")
-                f.write("- Each cell: 64x64 pixels representing temporal saturation histogram\n\n")
-                f.write("YOLO Format:\n")
-                f.write("- Class 0: smoke\n")
-                f.write("- Class 1: noSmoke\n")
-                
-                # Count total annotations
-                totalSegments = 0
-                smokeSegments = 0
-                noSmokeSegments = 0
-                videosProcessed = len(allAnnotations)
-                
-                for videoAnnotations in allAnnotations.values():
-                    for annotation in videoAnnotations.values():
-                        totalSegments += 1
-                        if annotation.get("hasSmoke", False):
-                            smokeSegments += 1
-                        else:
-                            noSmokeSegments += 1
-                
-                f.write(f"Dataset Statistics:\n")
-                f.write(f"- Videos processed: {videosProcessed}\n")
-                f.write(f"- Total segments: {totalSegments}\n")
-                f.write(f"- Smoke segments: {smokeSegments}\n")
-                f.write(f"- No smoke segments: {noSmokeSegments}\n")
-                
-            print(f"YOLO annotations saved to centralized folder: {yoloDir}")
-            print(f"Dataset contains annotations from {len(allAnnotations)} video(s)")
-            
-        except Exception as e:
-            print(f"Error saving YOLO annotations: {e}")
-            
-    def saveSegmentTemporalAnalysis(self, startFrame, endFrame, uniqueSegmentKey, imagesDir):
+
+    def saveSegmentTemporalAnalysis(self, startFrame, endFrame, uniqueSegmentKey, oppositeSegmentKey, imagesDir):
         """Generate and save temporal analysis image from 64-frame segment"""
         try:            
             # Load all 64 frames from the segment
@@ -2018,10 +1919,14 @@ class VideoSegmentEditor:
                             return
                 
                 frames.append(frame)
+
+            oppositeLabelFile = os.path.join(imagesDir, f"{oppositeSegmentKey}.png")
+            if os.path.exists(oppositeLabelFile):
+                os.remove(oppositeLabelFile)
             
             # Generate temporal analysis image (192x192)
             temporalImage = self.temporalGenerator.generate_from_frames(frames)
-            
+
             # Save temporal analysis image
             imagePath = os.path.join(imagesDir, f"{uniqueSegmentKey}.png")
             success = cv2.imwrite(imagePath, temporalImage)
