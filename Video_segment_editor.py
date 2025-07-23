@@ -1,23 +1,4 @@
 #!/usr/bin/env python3
-"""
-Video Segment Editor for Smoke Detection Annotation Tool
-
-This application provides a GUI for annotating video segments for smoke detection.
-Users can load videos, select 64-frame segments, watch them, and annotate
-whether smoke is present at the end of each segment.
-
-Optimizations implemented:
-- Consolidated duplicate code for segment movement operations
-- Improved frame caching and display performance
-- Added constants for magic numbers and colors
-- Better error handling and resource cleanup
-- Modular method design with separation of concerns
-- Performance optimizations for video playback
-- Memory management for frame and image caches
-
-Author: Optimized version
-"""
-
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
@@ -52,11 +33,6 @@ class Constants:
     MIN_FRAME_DELAY_MS = 10  # Minimum delay to prevent system overload
     PRELOAD_DELAY_MS = 5
     
-    # UI settings
-    CANVAS_FALLBACK_WIDTH = 700
-    CANVAS_FALLBACK_HEIGHT = 400
-    TIMELINE_MARGIN = 80
-    
     # Scaled UI settings for better layout
     SCALED_canvasWidth = 480
     SCALED_canvasHeight = 320
@@ -71,36 +47,11 @@ class Constants:
     LOADING_ANIMATION_DELAY_MS = 500
     GC_INTERVAL_FRAMES = 32
     
-    # Colors
-    COLORS = {
-        'bg_dark': '#2b2b2b',
-        'bg_medium': '#3b3b3b',
-        'bg_light': '#1e1e1e',
-        'text_white': 'white',
-        'text_gray': 'lightgray',
-        'text_green': 'lightgreen',
-        'text_orange': 'orange',
-        'button_green': '#4caf50',
-        'button_orange': '#ff9800',
-        'button_gray': '#757575',
-        'button_blue': '#607d8b',
-        'button_dark_blue': '#455a64',
-        'timeline_active': '#4caf50',
-        'timeline_border': '#2e7d32',
-        'timeline_bg': '#444444',
-        'timeline_border_light': '#666666',
-        'position_line': '#ff5722'
-    }
-    
 class Config:
     """Configuration settings for the application"""
     # File and directory settings
-    ANNOTATIONS_DIR = "smoke_detection_annotations"
-    IMAGES_SUBDIR = "images"
-    LABELS_SUBDIR = "labels"
     classesFile = "classes.txt"
     summaryFile = "Annotations_summary.json"
-    datasetInfoFile = "dataset_info.txt"
     
     # Video file types
     VIDEO_FILETYPES = [
@@ -108,9 +59,6 @@ class Config:
         ("MP4 files", "*.mp4"),
         ("All files", "*.*")
     ]
-    
-    # Class definitions
-    CLASS_NAMES = ["smoke", "noSmoke"]
 
 class VideoSegmentEditor:
     def __init__(self, root):
@@ -127,10 +75,8 @@ class VideoSegmentEditor:
         """Initialize window properties"""
         self.root.title("Smoke detection - Annotation tool")
         # Set root window background to match dark theme
-        try:
-            self.root.configure(bg=Constants.COLORS['bg_dark'])
-        except Exception:
-            self.root.configure(bg='#232323')  # fallback if Constants not ready
+        self.root.configure(bg='#2b2b2b')
+        self.root.protocol("WM_DELETE_WINDOW", self.cleanup)
 
         # Get screen dimensions for initial window sizing
         screenWidth = self.root.winfo_screenwidth()
@@ -223,22 +169,22 @@ class VideoSegmentEditor:
         """Setup the main GUI layout"""
         # Main container
         padding = 10
-        mainFrame = tk.Frame(self.root, bg=Constants.COLORS['bg_dark'])
+        mainFrame = tk.Frame(self.root, bg='#2b2b2b')
         mainFrame.pack(fill=tk.BOTH, expand=True, padx=padding, pady=padding)
         
         # Title
         titleLabel = tk.Label(mainFrame, text="Smoke detection - Annotation tool", 
                               font=('Arial', 20, 'bold'), 
-                              bg=Constants.COLORS['bg_dark'], 
-                              fg=Constants.COLORS['text_white'])
+                              bg='#2b2b2b', 
+                              fg='white')
         titleLabel.pack(pady=(0, 15))
         
         # Main content area - horizontal split
-        contentFrame = tk.Frame(mainFrame, bg=Constants.COLORS['bg_dark'])
+        contentFrame = tk.Frame(mainFrame, bg='#2b2b2b')
         contentFrame.pack(fill=tk.BOTH, expand=True)
         
         # Left side - Video and timeline
-        leftFrame = tk.Frame(contentFrame, bg=Constants.COLORS['bg_dark'])
+        leftFrame = tk.Frame(contentFrame, bg='#2b2b2b')
         leftFrame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, padding))
         
         # Top section - Video display
@@ -248,7 +194,7 @@ class VideoSegmentEditor:
         self.setupTimelineControls(leftFrame)
         
         # Right side - Control panels
-        self.rightFrame = tk.Frame(contentFrame, bg=Constants.COLORS['bg_dark'], width=self.rightPanelWidth)
+        self.rightFrame = tk.Frame(contentFrame, bg='#2b2b2b', width=self.rightPanelWidth)
         self.rightFrame.pack(side=tk.RIGHT, fill=tk.Y)
         self.rightFrame.pack_propagate(False)
         
@@ -269,7 +215,7 @@ class VideoSegmentEditor:
         
         # File load button
         self.loadBtn = tk.Button(infoBar, text="Load Video File", command=self.loadVideoFile,
-                                bg=Constants.COLORS['button_green'], fg=Constants.COLORS['text_white'], 
+                                bg='#4caf50', fg='white', 
                                 font=('Arial', 12, 'bold'), 
                                 width=15, height=2)
         self.loadBtn.pack(side=tk.LEFT, padx=(0, padding))
@@ -332,7 +278,7 @@ class VideoSegmentEditor:
         # Play/Pause button for preview - reduced height
         self.previewPlayPauseBtn = tk.Button(centerFrame, text="PLAY", 
                                             command=self.togglePreviewPlayback,
-                                            bg=Constants.COLORS['button_green'], fg=Constants.COLORS['text_white'], 
+                                            bg='#4caf50', fg='white', 
                                             font=('Arial', 11, 'bold'),
                                             width=8, height=2, state='disabled')
         self.previewPlayPauseBtn.pack(side=tk.LEFT, padx=6)
@@ -351,7 +297,7 @@ class VideoSegmentEditor:
                 width=8, height=2, state='disabled')
         self.move1Forward.pack(side=tk.LEFT, padx=6)  
         self.move10Forward = tk.Button(centerFrame, text="10 >", command=self.moveSegment10Forward,
-                bg='#607d8b', fg='white', font=('Arial', 11, 'bold'),
+                bg='#455a64', fg='white', font=('Arial', 11, 'bold'),
                 width=8, height=2, state='disabled')
         self.move10Forward.pack(side=tk.LEFT, padx=6)             
         self.move64Forward = tk.Button(centerFrame, text="64 >>", command=self.moveSegment64Forward,
@@ -510,10 +456,9 @@ class VideoSegmentEditor:
         # Get actual window dimensions
         self.root.update_idletasks()  # Ensure geometry is updated
         currentWidth = self.root.winfo_width()
-        currentHeight = self.root.winfo_height()
         
         # Handle case where window dimensions aren't ready yet
-        if currentWidth <= 1 or currentHeight <= 1:
+        if currentWidth <= 1:
             # Use initial window size if current dimensions aren't available
             if hasattr(self, 'windowWidth'):
                 currentWidth = self.windowWidth
@@ -539,9 +484,9 @@ class VideoSegmentEditor:
         currentHeight = self.root.winfo_height()
         
         # Handle case where window dimensions aren't ready yet
-        if currentHeight <= 1 or currentHeight <= 1:
-            if hasattr(self, 'windowWidth'):
-                currentHeight = self.currentHeight
+        if currentHeight <= 1:
+            if hasattr(self, 'windowHeight'):
+                currentHeight = self.windowHeight
             else:
                 currentHeight = 1300  # Fallback
         
@@ -681,7 +626,7 @@ class VideoSegmentEditor:
         """Convert frame number to time format (minutes:seconds)"""
         if not self.videoCap:
             return "0:00"
-        seconds = frame / self.fps
+        seconds = frame / self.fps if self.fps > 0 else 1
         minutes = int(seconds // 60)
         seconds = int(seconds % 60)
         return f"{minutes}:{seconds:02d}"
@@ -916,12 +861,12 @@ class VideoSegmentEditor:
         # Always show time labels
         self.timelineCanvas.create_text(timelineLeft - 10, canvasHeight // 2, 
                                       text=f"{current_time}", 
-                                      fill=Constants.COLORS['timeline_active'], anchor='e', font=('Arial', 12, 'bold'))
-        
+                                      fill='#4caf50', anchor='e', font=('Arial', 12, 'bold'))
+
         self.timelineCanvas.create_text(timeline_right + 10, canvasHeight // 2, 
                                       text=f"{total_time}", 
-                                      fill=Constants.COLORS['timeline_active'], anchor='w', font=('Arial', 12, 'bold'))
-        
+                                      fill='#4caf50', anchor='w', font=('Arial', 12, 'bold'))
+
         # Always draw basic timeline background
         self.timelineCanvas.create_rectangle(timelineLeft, 10, timeline_right, canvasHeight - 10,
                                            fill='#444444', outline='#666666')
@@ -933,9 +878,9 @@ class VideoSegmentEditor:
             
             # Draw selected segment
             self.timelineCanvas.create_rectangle(segment_start_x, 5, segment_end_x, canvasHeight - 5,
-                                               fill=Constants.COLORS['timeline_active'], 
-                                               outline=Constants.COLORS['timeline_border'], width=2)
-            
+                                               fill='#4caf50', 
+                                               outline='#2e7d32', width=2)
+
             # Draw current position indicator
             if hasattr(self, 'currentFrame'):
                 current_x = (self.currentFrame / self.totalFrames) * timelineWidth + timelineLeft
@@ -1650,10 +1595,10 @@ class VideoSegmentEditor:
     def resetPlayButtons(self):
         """Reset play buttons to initial state"""
         if hasattr(self, 'playPauseBtn'):
-            self.playPauseBtn.config(text="Play Segment", bg=Constants.COLORS['button_green'])
+            self.playPauseBtn.config(text="Play Segment", bg='#4caf50')
         if hasattr(self, 'previewPlayPauseBtn'):
-            self.previewPlayPauseBtn.config(text="PLAY", bg=Constants.COLORS['button_green'])
-            
+            self.previewPlayPauseBtn.config(text="PLAY", bg='#4caf50')
+
     def pausePlayback(self):
         """Pause playback"""
         self.isPlaying = False
@@ -1931,9 +1876,6 @@ class VideoSegmentEditor:
         except Exception as e:
             print(f"Error saving fallback frame {frameNumber}: {e}")
             
-    def __del__(self):
-        """Destructor to ensure proper cleanup"""
-        self.cleanup()
         
     def cleanup(self):
         """Clean up resources"""
@@ -1944,6 +1886,7 @@ class VideoSegmentEditor:
                 self.root.after_cancel(self.playbackTimer)
             if hasattr(self, 'loadingAnimationTimer') and self.loadingAnimationTimer:
                 self.root.after_cancel(self.loadingAnimationTimer)
+            self.root.destroy()
         except Exception as e:
             print(f"Cleanup error: {e}")
     
