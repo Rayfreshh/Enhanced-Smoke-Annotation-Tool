@@ -1764,7 +1764,7 @@ class VideoSegmentEditor:
             if not os.path.exists(classesFile):
                 with open(classesFile, 'w') as f:
                     f.write("smoke\n")
-                    f.write("noSmoke\n")
+                    f.write("no_smoke\n")
             
             # Final status update
             self.updateProcessingStatus("Finalizing annotation...")
