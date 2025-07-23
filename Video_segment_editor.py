@@ -119,7 +119,6 @@ class VideoSegmentEditor:
         self.initVideoProperties()
         self.initSegmentProperties()
         self.initAnnotationProperties()
-        self.initGuiState()
         self.initPerformanceVariables()
         
         self.setupGui()
@@ -203,10 +202,6 @@ class VideoSegmentEditor:
         self.segmentWatched = False
         self.lastFrame = None
         self.allAnnotations = {}
-        
-    def initGuiState(self):
-        """Initialize GUI state properties"""
-        self.workflowState = "selection"
         
     def initPerformanceVariables(self):
         """Initialize performance optimization variables"""
@@ -691,11 +686,6 @@ class VideoSegmentEditor:
         minutes = int(seconds // 60)
         seconds = int(seconds % 60)
         return f"{minutes}:{seconds:02d}"
-        
-    def setWorkflowState(self, state):
-        """Switch between different workflow states"""
-        self.workflowState = state
-        # Note: All panels are now always visible, no need to hide/show
             
     def loadVideoFile(self):
         """Load a video file"""
@@ -1021,7 +1011,7 @@ class VideoSegmentEditor:
 
         self.resetHistorySelection()  # Reset any history selection
 
-        if not self.videoCap or self.workflowState != "selection":
+        if not self.videoCap:
             return
         
         # Pause any ongoing playback when user clicks timeline
@@ -1110,7 +1100,7 @@ class VideoSegmentEditor:
         
     def onTimelineEnter(self, event):
         """Handle mouse entering timeline - change cursor"""
-        if self.workflowState == "selection" and self.videoCap:
+        if self.videoCap:
             self.timelineCanvas.config(cursor="hand2")
             
     def onTimelineLeave(self, event):
@@ -1119,7 +1109,7 @@ class VideoSegmentEditor:
         
     def moveSegment(self, frames, direction='forward'):
         """Generic method to move segment by specified number of frames"""
-        if not self.videoCap or self.workflowState != "selection":
+        if not self.videoCap:
             return
         
         # Pause any ongoing playback when user moves segment
@@ -1528,7 +1518,7 @@ class VideoSegmentEditor:
             
     def togglePreviewPlayback(self):
         """Toggle preview playback in selection mode"""
-        if not self.videoCap or self.workflowState != "selection":
+        if not self.videoCap:
             return
             
         if self.isPlaying:
@@ -1537,18 +1527,6 @@ class VideoSegmentEditor:
         else:
             self.playSegment()
             self.previewPlayPauseBtn.config(text="PAUSE", bg='#ff9800')
-        
-    def togglePlayPause(self):
-        """Toggle between play and pause"""
-        if not self.videoCap:
-            return
-            
-        if self.isPlaying:
-            self.pausePlayback()
-            self.playPauseBtn.config(text="Play Segment", bg='#4caf50')
-        else:
-            self.playSegment()
-            self.playPauseBtn.config(text="Pause Segment", bg='#ff9800')
         
     def playSegment(self):
         """Play the selected segment"""
@@ -1598,7 +1576,7 @@ class VideoSegmentEditor:
         
         if hasattr(self, 'playPauseBtn'):
             self.playPauseBtn.config(text="Pause Segment", bg='#ff9800')
-        if hasattr(self, 'previewPlayPauseBtn') and self.workflowState == "selection":
+        if hasattr(self, 'previewPlayPauseBtn'):
             self.previewPlayPauseBtn.config(text="PAUSE", bg='#ff9800')
         self.playNextFrame()
         
