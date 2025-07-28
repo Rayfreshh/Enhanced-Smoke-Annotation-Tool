@@ -18,9 +18,6 @@ class Constants:
     SEGMENT_LENGTH = 64
     BATCH_SIZE = 16
     MAX_CACHE_SIZE = 128
-    
-    # Movement increments
-    # These values are used for segment navigation
 
     SMALL_MOVE = 1
     MEDIUM_MOVE = 10
@@ -28,10 +25,9 @@ class Constants:
     HUGE_MOVE = 640
 
     # Timing settings
-    # Note: Frame delay is calculated dynamically based on video FPS
-    # using getIdealFrameDelayMs() method
     MIN_FRAME_DELAY_MS = 10  # Minimum delay to prevent system overload
     PRELOAD_DELAY_MS = 5
+    MAX_SKIPPED_FRAMES = 3  # Maximum frames to skip for real-time performance
     
     # Scaled UI settings for better layout
     SCALED_canvasWidth = 480
@@ -382,7 +378,7 @@ class VideoSegmentEditor:
         reviewAnnotationInner.pack(padx=8, pady=8)
     
         
-        self.instructionSubLabel = tk.Label(reviewAnnotationInner, text="Is there smoke visible at the end\n of this 64-frame segment?", 
+        self.instructionSubLabel = tk.Label(reviewAnnotationInner, text="Is there smoke visible\n in this 64-frame segment?", 
                 bg='#3b3b3b', fg='#00FFFF', 
                 font=('Arial', self.panelFonts.get('questionSub', 14), 'bold'), state='disabled')
         self.instructionSubLabel.pack(pady=8)
@@ -880,13 +876,6 @@ class VideoSegmentEditor:
             self.timelineCanvas.create_rectangle(segment_start_x, 5, segment_end_x, canvasHeight - 5,
                                                fill='#4caf50', 
                                                outline='#2e7d32', width=2)
-
-            # Draw current position indicator
-            if hasattr(self, 'currentFrame'):
-                current_x = (self.currentFrame / self.totalFrames) * timelineWidth + timelineLeft
-                current_x = max(timelineLeft, min(timeline_right, current_x))
-                self.timelineCanvas.create_line(current_x, 0, current_x, canvasHeight,
-                                              fill='#ff5722', width=3)
             
             # Add start and end markers at exact positions
             self.timelineCanvas.create_line(segment_start_x, 5, segment_start_x, canvasHeight - 5,
@@ -1523,14 +1512,21 @@ class VideoSegmentEditor:
         self.playNextFrame()
         
     def playNextFrame(self):
-        """Play next frame in segment with maximum performance optimization"""
+        """Play next frame in segment with limited frame skipping for real-time speed."""
         if not self.isPlaying or not self.videoCap:
             return
-            
-        if self.currentFrame <= self.segmentEnd:
-            
-            # Ultra-fast frame display - minimal overhead
-            frame = self.getCachedOrLoadFrame(self.currentFrame)
+
+        # Calculate which frame should be shown based on elapsed time
+        elapsed = time.time() - self.playbackStartTime
+        targetFrame = int(self.segmentStart + elapsed * self.fps)
+        targetFrame = min(targetFrame, self.segmentEnd)
+
+        # Limit frame skipping to max 3 consecutive frames
+        if targetFrame > self.currentFrame + Constants.MAX_SKIPPED_FRAMES:
+            targetFrame = self.currentFrame + Constants.MAX_SKIPPED_FRAMES
+
+        if targetFrame <= self.segmentEnd:
+            frame = self.getCachedOrLoadFrame(targetFrame)
             if frame is not None:
                 display_start = time.time()
                 self.displayVideoFrame(frame)
@@ -1538,24 +1534,23 @@ class VideoSegmentEditor:
             else:
                 print(f"WARNING - Frame {self.currentFrame} not cached!")
                 displayTime = 0
-            
+
+            self.currentFrame = targetFrame
+
             # Update frame info and timeline for smooth user experience
             self.updateFrameInfo()
-            self.drawTimeline()
-            
-            self.currentFrame += 1
-            
+
             # Adaptive timing compensation based on actual display time
-            delay = self.calculateFrameDelay(displayTime)
-            
+            delay = max(Constants.MIN_FRAME_DELAY_MS, self.getIdealFrameDelayMs() - int(displayTime))
+
             # Periodic garbage collection to prevent buildup
             if self.currentFrame % Constants.GC_INTERVAL_FRAMES == 0:
                 gc.collect()
-            
-            self.playbackTimer = self.root.after(delay, self.playNextFrame)
-        else:
-            # Segment finished
-            self.handlePlaybackFinished()
+
+            if self.currentFrame >= self.segmentEnd:
+                self.handlePlaybackFinished()
+            else:
+                self.playbackTimer = self.root.after(delay, self.playNextFrame)
             
     def calculateFrameDelay(self, displayTime):
         """Calculate adaptive frame delay based on display performance and video FPS"""
