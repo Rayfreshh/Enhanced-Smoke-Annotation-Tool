@@ -727,7 +727,16 @@ class VideoSegmentEditor:
                     break
         
         if not videoAnnotations:
-            self.displayHistoryMessage(f"No annotations found for video: {self.videoName}")
+            shortcut_guide = (
+                "\n\nKeyboard Shortcuts:\n"
+                "  • Spacebar: Play/Pause segment\n"
+                "  • Enter: Replay segment\n"
+                "  • Arrow Up: Mark SMOKE\n"
+                "  • Arrow Down: Mark NO SMOKE\n"
+                "  • Arrow Left: Previous segment\n"
+                "  • Arrow Right: Next segment\n"
+            )
+            self.displayHistoryMessage(f"No annotations found for video: {self.videoName}{shortcut_guide}")
             return
         
         # Format and display the annotations
@@ -1956,12 +1965,12 @@ class VideoSegmentEditor:
         
         if key == 'space':
             self.togglePreviewPlayback()
-        elif key == 's':
-            self.markSmoke()
-        elif key == 'n':
-            self.markNoSmoke()
-        elif key == 'r':
+        elif key == 'enter':
             self.replaySegment()
+        elif key == 'up':
+            self.markSmoke()
+        elif key == 'down':
+            self.markNoSmoke()
         elif key == 'left':
             self.moveSegment64Back()
         elif key == 'right':
