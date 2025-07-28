@@ -5,6 +5,7 @@ import os
 import json
 import time
 import gc
+import sys
 from datetime import datetime
 from PIL import Image, ImageTk
 import cv2
@@ -2006,17 +2007,28 @@ class VideoSegmentEditor:
         elif key == 'right':
             self.moveSegment10Forward()
 
+def resource_path(relative_path):
+    if hasattr(sys, '_MEIPASS'):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
 def main():
     """Main function to run the application"""
     try:
         root = tk.Tk()
+
+        icon_path = resource_path('Smoke_application_image.ico')
+        root.iconbitmap(icon_path)
+
         app = VideoSegmentEditor(root)
+
         root.mainloop()
     except Exception as e:
         print(f"Application error: {e}")
         messagebox.showerror("Application Error", f"An unexpected error occurred: {e}")
     finally:
-        # Cleanup
         if 'app' in locals() and hasattr(app, 'videoCap') and app.videoCap:
             app.videoCap.release()
 
