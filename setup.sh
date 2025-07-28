@@ -1,34 +1,30 @@
 #!/bin/bash
 
-# Detect OS
 OS_TYPE="$(uname -s)"
 
+COMMON_ARGS=(
+  --onefile
+  --hidden-import PIL._tkinter_finder
+  --noconsole
+  --distpath=./
+  Video_segment_editor.py
+)
+
 if [[ "$OS_TYPE" == "Linux" ]]; then
-  python3.13 -m PyInstaller \
-    --onefile \
-    --hidden-import PIL._tkinter_finder \
-    --noconsole \
-    --name="Smoke_Annotation_Linux" \
-    --distpath=./ \
-    Video_segment_editor.py
-
-  rm -rf build
-  rm "Smoke_Annotation_Linux.spec"
-
+  NAME="Smoke Annotation (Linux)"
+  ICON=""
 elif [[ "$OS_TYPE" == MINGW* || "$OS_TYPE" == MSYS* || "$OS_TYPE" == CYGWIN* ]]; then
-  python3.13 -m PyInstaller \
-    --onefile \
-    --hidden-import PIL._tkinter_finder \
-    --noconsole \
-    --icon=Smoke_application_image.ico \
-    --name="Smoke Annotation (windows)" \
-    --distpath=./ \
-    Video_segment_editor.py
-
-  rm -rf build
-  rm "Smoke Annotation (windows).spec"
-
+  NAME="Smoke Annotation (Windows)"
+  ICON="--icon=Smoke_application_image.ico"
 else
   echo "Unsupported OS: $OS_TYPE"
   exit 1
 fi
+
+python3.13 -m PyInstaller \
+  --name="$NAME" \
+  $ICON \
+  "${COMMON_ARGS[@]}"
+
+rm -rf build
+rm "${NAME}.spec"
