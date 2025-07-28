@@ -1537,6 +1537,7 @@ class VideoSegmentEditor:
             self.currentFrame = targetFrame
 
             # Update frame info and timeline for smooth user experience
+            self.drawTimeline()
             self.updateFrameInfo()
 
             # Adaptive timing compensation based on actual display time
