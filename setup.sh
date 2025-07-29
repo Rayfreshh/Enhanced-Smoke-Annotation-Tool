@@ -21,7 +21,7 @@ else
   exit 1
 fi
 
-python3.13 -m PyInstaller \
+py -m PyInstaller \
   --name="$NAME" \
   $ICON \
   "${COMMON_ARGS[@]}"
