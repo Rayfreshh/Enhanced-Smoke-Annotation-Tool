@@ -1312,9 +1312,11 @@ class VideoSegmentEditor:
                 self.processingStatusLabel.config(text=result_message, fg='#ff9800')
             
             self.root.update_idletasks()
-            
-            # Hide the overlay after 2.5 seconds
-            self.root.after(1500, self.hideProcessingOverlay)
+
+            self.isProcessingAnnotation = False
+
+            # Hide the overlay after 1 second
+            self.root.after(1000, self.hideProcessingOverlay)
     
     def hideProcessingOverlay(self):
         """Hide processing overlay"""
@@ -1613,6 +1615,10 @@ class VideoSegmentEditor:
             messagebox.showwarning("Watch Required", "Please watch the segment completely before making an annotation.")
             return
         
+        if getattr(self, 'isProcessingAnnotation', False):
+            return  # Already processing, ignore further calls
+        self.isProcessingAnnotation = True
+
         # Show processing overlay
         self.showProcessingOverlay("Processing SMOKE annotation...")
         
@@ -1625,6 +1631,10 @@ class VideoSegmentEditor:
             messagebox.showwarning("Watch Required", "Please watch the segment completely before making an annotation.")
             return
         
+        if getattr(self, 'isProcessingAnnotation', False):
+            return  # Already processing, ignore further calls
+        
+        self.isProcessingAnnotation = True
         # Show processing overlay
         self.showProcessingOverlay("Processing NO SMOKE annotation...")
         
@@ -1965,7 +1975,7 @@ class VideoSegmentEditor:
         
         if key == 'space':
             self.togglePreviewPlayback()
-        elif key == 'enter':
+        elif key == 'return':
             self.replaySegment()
         elif key == 'up':
             self.markSmoke()
