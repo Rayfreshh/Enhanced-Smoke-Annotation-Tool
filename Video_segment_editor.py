@@ -77,21 +77,11 @@ class VideoSegmentEditor:
         screenWidth = self.root.winfo_screenwidth()
         screenHeight = self.root.winfo_screenheight()
 
-        # Set initial window size based on screen size
-        if screenWidth <= 1920 and screenHeight <= 1080:
-            self.windowWidth = min(1300, screenWidth - 80)
-            self.windowHeight = min(850, screenHeight - 80)
-        elif screenWidth <= 2560 and screenHeight <= 1440:
-            self.windowWidth = min(1600, screenWidth - 100)
-            self.windowHeight = min(1000, screenHeight - 100)
-        else:
-            self.windowWidth = min(1800, screenWidth - 100)
-            self.windowHeight = min(1200, screenHeight - 100)
+        self.windowWidth = screenWidth
+        self.windowHeight = screenHeight
         
-        # Set window geometry
-        x = (screenWidth - self.windowWidth) // 2
-        y = (screenHeight - self.windowHeight) // 2
-        self.root.geometry(f"{self.windowWidth}x{self.windowHeight}+{x}+{y}")
+        # Set window geometry to fullscreen size
+        self.root.geometry(f"{self.windowWidth}x{self.windowHeight}+0+0")
         
         # Try to maximize on Windows, otherwise use normal state
         try:
@@ -155,6 +145,7 @@ class VideoSegmentEditor:
         self.loadingLabel = None
         self.loadingAnimationTimer = None
         self.loadingDots = 0
+        self.moveFinished = True
         
         # Initialize temporal analysis generator
         self.temporalGenerator = TemporalAnalysisGenerator()
@@ -428,6 +419,7 @@ class VideoSegmentEditor:
         """Bind keyboard events"""
         self.root.bind('<Key>', self.onKeyPress)
         self.root.focus_set()
+    
     
     def calculateDynamicPanelWidth(self):
         """Calculate right panel width based on current window size"""
@@ -1043,7 +1035,7 @@ class VideoSegmentEditor:
             newStart = max(0, self.segmentStart - frames)
             
         self.updateSegmentPosition(newStart)
-        
+
     def updateSegmentPosition(self, newStart):
         """Update segment position and reset related states"""
         self.segmentStart = newStart
@@ -1981,10 +1973,26 @@ class VideoSegmentEditor:
             self.markSmoke()
         elif key == 'down':
             self.markNoSmoke()
-        elif key == 'left':
+        elif (key == 'left') and self.moveFinished:
+            self.moveFinished = False
+            # Cancel any pending timer
+            if hasattr(self, '_move_timer'):
+                self.root.after_cancel(self._move_timer)
             self.moveSegment64Back()
-        elif key == 'right':
+            # Set a timer to re-enable moves after a short delay
+            self._move_timer = self.root.after(5, self.enableMoveFinished)
+        elif (key == 'right') and self.moveFinished:
+            self.moveFinished = False
+            # Cancel any pending timer
+            if hasattr(self, '_move_timer'):
+                self.root.after_cancel(self._move_timer)
             self.moveSegment64Forward()
+            # Set a timer to re-enable moves after a short delay
+            self._move_timer = self.root.after(5, self.enableMoveFinished)
+    
+    def enableMoveFinished(self):
+        """Re-enable segment moves after debounce delay"""
+        self.moveFinished = True
 
 def main():
     """Main function to run the application"""
