@@ -1,4 +1,5 @@
 #!/bin/bash
+
 if command -v py >/dev/null 2>&1; then
   PYTHON="py -3"
 elif command -v python3 >/dev/null 2>&1; then
@@ -11,6 +12,16 @@ else
 fi
 
 OS_TYPE="$(uname -s)"
+
+# Check if PyInstaller is installed, install if not
+if ! $PYTHON -c "import PyInstaller" >/dev/null 2>&1; then
+  echo "Installing..."
+  $PYTHON -m pip install pyinstaller >/dev/null 2>&1
+  if [ $? -ne 0 ]; then
+    echo "Installation failed. Please install PyInstaller manually with: $PYTHON -m pip install pyinstaller"
+    exit 1
+  fi
+fi
 
 COMMON_ARGS=(
   --onefile
@@ -31,10 +42,19 @@ else
   exit 1
 fi
 
+echo "Installing Smoke Annotation Tool...
+!!! Don't close this window until the installation is complete. !!!"
 $PYTHON -m PyInstaller \
   --name="$NAME" \
   $ICON \
-  "${COMMON_ARGS[@]}"
+  "${COMMON_ARGS[@]}" >/dev/null 2>&1
 
-rm -rf build
-rm "${NAME}.spec"
+if [ $? -eq 0 ]; then
+  rm -rf build && rm "${NAME}.spec"
+  echo "Build completed successfully. The executable is located in the current directory."
+else
+  echo "Build failed. Please check your Python environment and dependencies."
+  exit 1
+fi
+exit 0
+# End of setup.sh
