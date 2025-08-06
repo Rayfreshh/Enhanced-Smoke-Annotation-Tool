@@ -1604,7 +1604,6 @@ class VideoSegmentEditor:
     def markSmoke(self):
         """Mark segment as containing smoke"""
         if not self.segmentWatched:
-            messagebox.showwarning("Watch Required", "Please watch the segment completely before making an annotation.")
             return
         
         if getattr(self, 'isProcessingAnnotation', False):
@@ -1620,7 +1619,6 @@ class VideoSegmentEditor:
     def markNoSmoke(self):
         """Mark segment as no smoke"""
         if not self.segmentWatched:
-            messagebox.showwarning("Watch Required", "Please watch the segment completely before making an annotation.")
             return
         
         if getattr(self, 'isProcessingAnnotation', False):
@@ -1871,7 +1869,7 @@ class VideoSegmentEditor:
         
         # Display enhanced header with statistics
         header = f"Annotation History: {self.videoName}\n"
-        header += "=" * 60 + "\n\n"
+        header += "=" * 59 + "\n\n"
         
         # Add instructions
         header += "Instructions:\n"
