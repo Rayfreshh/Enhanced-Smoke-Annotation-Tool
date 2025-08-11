@@ -18,10 +18,9 @@ class Constants:
     BATCH_SIZE = 16
     MAX_CACHE_SIZE = 128
 
-    SMALL_MOVE = 1
-    MEDIUM_MOVE = 10
-    LARGE_MOVE = 64
-    HUGE_MOVE = 640
+    SMALL_MOVE = 10
+    MEDIUM_MOVE = 64
+    LARGE_MOVE = 640
 
     # Timing settings
     MIN_FRAME_DELAY_MS = 10  # Minimum delay to prevent system overload
@@ -244,14 +243,18 @@ class VideoSegmentEditor:
         centerFrame.pack(expand=True)
         
         # Move Back buttons - reduced height
-        self.move640Back = tk.Button(centerFrame, text="<< 640", command=self.moveSegment640Back,
+        self.move640Back = tk.Button(centerFrame, text="<<< 640", command=self.moveSegment640Back,
                 bg='#455a64', fg='white', font=('Arial', 11, 'bold'),
                 width=8, height=2, state='disabled')
         self.move640Back.pack(side=tk.LEFT, padx=6)
-        self.move64Back = tk.Button(centerFrame, text="< 64", command=self.moveSegment64Back,
+        self.move64Back = tk.Button(centerFrame, text="<< 64", command=self.moveSegment64Back,
                 bg='#607d8b', fg='white', font=('Arial', 11, 'bold'),
                 width=8, height=2, state='disabled')
         self.move64Back.pack(side=tk.LEFT, padx=6)
+        self.move10Back = tk.Button(centerFrame, text="< 10", command=self.moveSegment10Back,
+                bg='#78909c', fg='white', font=('Arial', 11, 'bold'),
+                width=8, height=2, state='disabled')
+        self.move10Back.pack(side=tk.LEFT, padx=6)
 
         # Play/Pause button for preview - reduced height
         self.previewPlayPauseBtn = tk.Button(centerFrame, text="PLAY", 
@@ -268,12 +271,17 @@ class VideoSegmentEditor:
                                   font=('Arial', 11, 'bold'),
                                   width=8, height=2, state='disabled')
         self.replayBtn.pack(side=tk.LEFT, padx=6)
-    
-        self.move64Forward = tk.Button(centerFrame, text="64 >", command=self.moveSegment64Forward,
+
+
+        self.move10Forward = tk.Button(centerFrame, text="10 >", command=self.moveSegment10Forward,
+                bg='#78909c', fg='white', font=('Arial', 11, 'bold'),
+                width=8, height=2, state='disabled')
+        self.move10Forward.pack(side=tk.LEFT, padx=6)
+        self.move64Forward = tk.Button(centerFrame, text="64 >>", command=self.moveSegment64Forward,
                 bg='#607d8b', fg='white', font=('Arial', 11, 'bold'),
                 width=8, height=2, state='disabled')
         self.move64Forward.pack(side=tk.LEFT, padx=6)
-        self.move640Forward = tk.Button(centerFrame, text="640 >>", command=self.moveSegment640Forward,
+        self.move640Forward = tk.Button(centerFrame, text="640 >>>", command=self.moveSegment640Forward,
                 bg='#455a64', fg='white', font=('Arial', 11, 'bold'),
                 width=8, height=2, state='disabled')
         self.move640Forward.pack(side=tk.LEFT, padx=6)
@@ -788,8 +796,8 @@ class VideoSegmentEditor:
     def enableVideoControls(self):
         """Enable video control buttons"""
         controlButtons = [
-            'previewPlayPauseBtn', 'replayBtn', 'move640Back', 'move64Back', 
-            'move640Forward', 'move64Forward'
+            'previewPlayPauseBtn', 'replayBtn', 'move640Back', 'move64Back', 'move10Back',
+            'move640Forward', 'move64Forward', 'move10Forward',
         ]
         
         for buttonName in controlButtons:
@@ -1054,25 +1062,35 @@ class VideoSegmentEditor:
         self.drawTimeline()
         self.displayFrame(self.segmentStart)
 
+    def moveSegment10Back(self):
+        """Move segment backward by 64 frames"""
+        self.resetHistorySelection()
+        self.moveSegment(Constants.SMALL_MOVE, 'backward')
+
     def moveSegment64Back(self):
         """Move segment backward by 64 frames"""
         self.resetHistorySelection()
-        self.moveSegment(Constants.LARGE_MOVE, 'backward')
+        self.moveSegment(Constants.MEDIUM_MOVE, 'backward')
         
     def moveSegment640Back(self):
         """Move segment backward by 640 frames"""
         self.resetHistorySelection()
-        self.moveSegment(Constants.HUGE_MOVE, 'backward')
+        self.moveSegment(Constants.LARGE_MOVE, 'backward')
+
+    def moveSegment10Forward(self):
+        """Move segment forward by 64 frames"""
+        self.resetHistorySelection()
+        self.moveSegment(Constants.SMALL_MOVE, 'forward')
         
     def moveSegment64Forward(self):
         """Move segment forward by 64 frames"""
         self.resetHistorySelection()
-        self.moveSegment(Constants.LARGE_MOVE, 'forward')
+        self.moveSegment(Constants.MEDIUM_MOVE, 'forward')
         
     def moveSegment640Forward(self):
         """Move segment forward by 640 frames"""
         self.resetHistorySelection()
-        self.moveSegment(Constants.HUGE_MOVE, 'forward')
+        self.moveSegment(Constants.LARGE_MOVE, 'forward')
     
         
     def displayFrame(self, frameNumber):
