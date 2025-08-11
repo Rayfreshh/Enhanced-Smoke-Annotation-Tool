@@ -14,32 +14,32 @@ from temporal_analysis_complete import TemporalAnalysisGenerator
 # Constants
 class Constants:
     # Segment settings
-    SEGMENT_LENGTH = 64
-    BATCH_SIZE = 16
-    MAX_CACHE_SIZE = 128
+    segmentLength = 64
+    batchSize = 16
+    maxCacheSize = 128
 
-    SMALL_MOVE = 10
-    MEDIUM_MOVE = 64
-    LARGE_MOVE = 640
+    smallMove = 10
+    mediumMove = 64
+    largeMove = 640
 
     # Timing settings
-    MIN_FRAME_DELAY_MS = 10  # Minimum delay to prevent system overload
-    PRELOAD_DELAY_MS = 5
-    MAX_SKIPPED_FRAMES = 3  # Maximum frames to skip for real-time performance
+    minFrameDelayMs = 10  # Minimum delay to prevent system overload
+    preloadDelayMs = 5
+    maxSkippedFrames = 3  # Maximum frames to skip for real-time performance
     
     # Scaled UI settings for better layout
-    SCALED_canvasWidth = 480
-    SCALED_canvasHeight = 320
-    SCALED_TIMELINE_HEIGHT = 60
+    scaledCanvasWidth = 480
+    scaledCanvasHeight = 320
+    scaledTimelineHeight = 60
     
     # Scaled annotation button settings
-    SCALED_BUTTON_HEIGHT = 4  # Reduced from 6 to save space
-    SCALED_BUTTON_FONT_SIZE = 16  # Reduced from 18
-    SCALED_BUTTON_PADDING = 8  # Reduced from 12
+    scaledButtonHeight = 4  # Reduced from 6 to save space
+    scaledButtonFontSize = 16  # Reduced from 18
+    scaledButtonPadding = 8  # Reduced from 12
     
     # Animation settings
-    LOADING_ANIMATION_DELAY_MS = 500
-    GC_INTERVAL_FRAMES = 32
+    loadingAnimationDelayMs = 500
+    gcIntervalFrames = 32
     
 class Config:
     """Configuration settings for the application"""
@@ -47,8 +47,13 @@ class Config:
     classesFile = "classes.txt"
     summaryFile = "Annotations_summary.json"
     
+    # Dataset modes
+    datasetTrain = "train"
+    datasetVal = "val"
+    defaultDatasetMode = datasetTrain
+    
     # Video file types
-    VIDEO_FILETYPES = [
+    videoFiletypes = [
         ("Video files", "*.mp4 *.avi *.mov *.mkv *.wmv"),
         ("MP4 files", "*.mp4"),
         ("All files", "*.*")
@@ -115,8 +120,8 @@ class VideoSegmentEditor:
     def initSegmentProperties(self):
         """Initialize segment-related properties"""
         self.segmentStart = 0
-        self.segmentEnd = Constants.SEGMENT_LENGTH - 1
-        self.segmentLength = Constants.SEGMENT_LENGTH
+        self.segmentEnd = Constants.segmentLength - 1
+        self.segmentLength = Constants.segmentLength
         self.isPlaying = False
         self.playbackTimer = None
         self.pausedFrame = None
@@ -131,7 +136,8 @@ class VideoSegmentEditor:
         self.segmentWatched = False
         self.lastFrame = None
         self.allAnnotations = {}
-        
+        self.datasetMode = Config.defaultDatasetMode
+
     def initPerformanceVariables(self):
         """Initialize performance optimization variables"""
         self.canvasWidth = None
@@ -211,14 +217,48 @@ class VideoSegmentEditor:
                                       font=('Arial', 12))
         self.videoInfoLabel.pack(side=tk.LEFT, padx=padding)
         
-        self.frameInfoLabel = tk.Label(infoBar, text="Frame: 0/0", 
-                                      bg='#3b3b3b', fg='lightgray', 
-                                      font=('Arial', 12))
-        self.frameInfoLabel.pack(side=tk.RIGHT, padx=padding)
+        # Dataset mode switch (compact) - positioned on the right side
+        datasetSwitchFrame = tk.Frame(infoBar, bg='#3b3b3b')
+        datasetSwitchFrame.pack(side=tk.RIGHT, padx=(0, padding))
+        
+        # Initialize dataset mode variable
+        self.datasetModeVar = tk.StringVar(value=self.datasetMode)
+        
+        # Compact dataset mode label
+        datasetLabel = tk.Label(datasetSwitchFrame, text="Dataset:", 
+                               bg='#3b3b3b', fg='lightgray', 
+                               font=('Arial', 16, 'bold'))
+        datasetLabel.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Radio buttons for dataset mode (compact layout)
+        self.trainRadio = tk.Radiobutton(datasetSwitchFrame, text="Train", 
+                                        variable=self.datasetModeVar, 
+                                        value=Config.datasetTrain,
+                                        command=self.onDatasetModeChange,
+                                        bg='#3b3b3b', fg='white',
+                                        selectcolor='#4caf50',
+                                        font=('Arial', 12, 'bold'), 
+                                        indicatoron=0,
+                                        width=15, height=2)
+        self.trainRadio.pack(side=tk.LEFT, padx=padding)
+        
+        self.valRadio = tk.Radiobutton(datasetSwitchFrame, text="Validation", 
+                                      variable=self.datasetModeVar, 
+                                      value=Config.datasetVal,
+                                      command=self.onDatasetModeChange,
+                                      bg='#3b3b3b', fg='white', 
+                                      selectcolor='#ff9800',
+                                      font=('Arial', 12, 'bold'), 
+                                      indicatoron=0,
+                                      width=15, height=2)
+        self.valRadio.pack(side=tk.LEFT)
+        
+        # Initialize button colors for default mode
+        self.updateDatasetModeButtons()
         
         # Video canvas - scaled for better layout
-        canvasWidth = Constants.SCALED_canvasWidth
-        canvasHeight = Constants.SCALED_canvasHeight
+        canvasWidth = Constants.scaledCanvasWidth
+        canvasHeight = Constants.scaledCanvasHeight
         self.videoCanvas = tk.Canvas(videoFrame, bg='black', 
                                    width=canvasWidth, height=canvasHeight)
         self.videoCanvas.pack(fill=tk.BOTH, expand=True, padx=padding, pady=(0, padding))
@@ -293,7 +333,7 @@ class VideoSegmentEditor:
         timelineFrame.pack_propagate(False)
         
         # Timeline canvas for visual representation - scaled
-        self.timelineCanvas = tk.Canvas(timelineFrame, bg='#1e1e1e', height=Constants.SCALED_TIMELINE_HEIGHT)
+        self.timelineCanvas = tk.Canvas(timelineFrame, bg='#1e1e1e', height=Constants.scaledTimelineHeight)
         self.timelineCanvas.pack(fill=tk.X, padx=20, pady=15)
         
         # Bind timeline events
@@ -316,7 +356,7 @@ class VideoSegmentEditor:
         controlFrame.pack(fill=tk.BOTH, expand=True, padx=10)
         
         # Segment Selection Controls Panel (always visible on right)
-        self.selectionControlPanel = tk.LabelFrame(controlFrame, text="Segment Selection", 
+        self.selectionControlPanel = tk.LabelFrame(controlFrame, text="Annotation information", 
                                                   font=('Arial', self.panelFonts.get('panelTitle', 12), 'bold'), 
                                                   bg='#3b3b3b', fg='white')
         
@@ -333,20 +373,30 @@ class VideoSegmentEditor:
         self.selectionInfoLabel.pack(pady=(5, 2))
         
         self.segmentInfoLabel = tk.Label(segmentInfoFrame, text="Frames 0-63 (64 frames)", 
-                                             bg='#3b3b3b', fg='lightgreen', 
+                                             bg='#3b3b3b', fg='#98FB98', 
                                              font=('Arial', self.panelFonts.get('info', 10), 'bold'))
         self.segmentInfoLabel.pack()
 
-        self.annotationInfoLabel = tk.Label(segmentInfoFrame, text="Total annotated segments:", 
-                bg='#3b3b3b', fg='white', 
+        self.annotationInfoLabel = tk.Label(segmentInfoFrame, text="Annotation Summary:", 
+                bg='#3b3b3b', fg='#E6E6FA', 
                 font=('Arial', self.panelFonts.get('panelTitle', 12), 'bold'))
         self.annotationInfoLabel.pack(pady=(5, 2))
 
         self.smokeInfoLabel = tk.Label(segmentInfoFrame, text="No annotations yet", 
-                                             bg='#3b3b3b', fg='lightgreen',
+                                             bg='#3b3b3b', fg="#F7E07C",
                                              font=('Arial', self.panelFonts.get('info', 10), 'bold'))
         self.smokeInfoLabel.pack()
-        
+
+        self.ratioInfoLabel = tk.Label(segmentInfoFrame, text="Dataset Distribution:", 
+            bg='#3b3b3b', fg='#E6E6FA', 
+            font=('Arial', self.panelFonts.get('panelTitle', 12), 'bold'))
+        self.ratioInfoLabel.pack(pady=(5, 2))
+
+        self.annotationRatioLabel = tk.Label(segmentInfoFrame, text="No annotations yet",
+                                                bg='#3b3b3b', fg="#DA85DA",
+                                                font=('Arial', self.panelFonts.get('info', 10), 'bold'))
+        self.annotationRatioLabel.pack()
+                                         
         # Always show selection control panel
         self.selectionControlPanel.pack(fill=tk.X, pady=10)
 
@@ -377,16 +427,16 @@ class VideoSegmentEditor:
         self.smokeBtn = tk.Button(annotationButtonsFrame, text="SMOKE", 
                                  command=self.markSmoke,
                                  bg='#757575', fg='white', 
-                                 font=('Arial', self.panelFonts.get('button', Constants.SCALED_BUTTON_FONT_SIZE), 'bold'),
-                                 width=35, height=Constants.SCALED_BUTTON_HEIGHT, state='disabled')
-        self.smokeBtn.pack(pady=Constants.SCALED_BUTTON_PADDING)
+                                 font=('Arial', self.panelFonts.get('button', Constants.scaledButtonFontSize), 'bold'),
+                                 width=35, height=Constants.scaledButtonHeight, state='disabled')
+        self.smokeBtn.pack(pady=Constants.scaledButtonPadding)
         
         self.noSmokeBtn = tk.Button(annotationButtonsFrame, text="NO SMOKE", 
                                    command=self.markNoSmoke,
                                    bg='#757575', fg='white', 
-                                   font=('Arial', self.panelFonts.get('button', Constants.SCALED_BUTTON_FONT_SIZE), 'bold'),
-                                   width=35, height=Constants.SCALED_BUTTON_HEIGHT, state='disabled')
-        self.noSmokeBtn.pack(pady=Constants.SCALED_BUTTON_PADDING)
+                                   font=('Arial', self.panelFonts.get('button', Constants.scaledButtonFontSize), 'bold'),
+                                   width=35, height=Constants.scaledButtonHeight, state='disabled')
+        self.noSmokeBtn.pack(pady=Constants.scaledButtonPadding)
         
         # Show annotation panel first (at top)
         self.reviewAnnotationPanel.pack(fill=tk.X, pady=10)
@@ -428,6 +478,20 @@ class VideoSegmentEditor:
         self.root.bind('<Key>', self.onKeyPress)
         self.root.focus_set()
     
+    def onDatasetModeChange(self):
+        """Handle dataset mode selection change"""
+        self.datasetMode = self.datasetModeVar.get()
+        self.updateDatasetModeButtons()
+    
+    def updateDatasetModeButtons(self):
+        """Update dataset mode button colors to show active mode"""
+        if hasattr(self, 'trainRadio') and hasattr(self, 'valRadio'):
+            if self.datasetMode == Config.datasetTrain:
+                self.trainRadio.config(bg='#4caf50', fg='white')
+                self.valRadio.config(bg='#3b3b3b', fg='lightgray')
+            else:
+                self.trainRadio.config(bg='#3b3b3b', fg='lightgray')
+                self.valRadio.config(bg='#ff9800', fg='white')
     
     def calculateDynamicPanelWidth(self):
         """Calculate right panel width based on current window size"""
@@ -544,10 +608,14 @@ class VideoSegmentEditor:
             self.selectionInfoLabel.config(font=('Arial', self.panelFonts['panelTitle'], 'bold'))
         if hasattr(self, 'annotationInfoLabel'):    
             self.annotationInfoLabel.config(font=('Arial', self.panelFonts['panelTitle'], 'bold'))
+        if hasattr(self, 'ratioInfoLabel'):
+            self.ratioInfoLabel.config(font=('Arial', self.panelFonts['panelTitle'], 'bold'))
         if hasattr(self, 'segmentInfoLabel'):
             self.segmentInfoLabel.config(font=('Arial', self.panelFonts['info'], 'bold'))
         if hasattr(self, 'smokeInfoLabel'):
             self.smokeInfoLabel.config(font=('Arial', self.panelFonts['info'], 'bold'))
+        if hasattr(self, 'annotationRatioLabel'):
+            self.annotationRatioLabel.config(font=('Arial', self.panelFonts['info'], 'bold'))
 
         # Update annotation buttons
         if hasattr(self, 'smokeBtn'):
@@ -589,10 +657,10 @@ class VideoSegmentEditor:
         idealDelay = 1000 / self.fps
         
         # Handle edge cases for very high or very low FPS
-        if idealDelay < Constants.MIN_FRAME_DELAY_MS:
+        if idealDelay < Constants.minFrameDelayMs:
             # For very high FPS videos (>100 FPS), use minimum delay
             print(f"Warning: Video FPS ({self.fps:.1f}) is very high. Using minimum delay.")
-            return Constants.MIN_FRAME_DELAY_MS
+            return Constants.minFrameDelayMs
         elif idealDelay > 200:
             # For very low FPS videos (<5 FPS), cap the delay
             print(f"Warning: Video FPS ({self.fps:.1f}) is very low. Capping delay at 200ms.")
@@ -615,7 +683,7 @@ class VideoSegmentEditor:
         filename = filedialog.askopenfilename(
             title="Select a video file",
             initialdir=self.lastDir,
-            filetypes=Config.VIDEO_FILETYPES,
+            filetypes=Config.videoFiletypes,
         )
         
         if filename:
@@ -652,15 +720,14 @@ class VideoSegmentEditor:
                 try:
                     self.loadAnnotationHistory()
                     self.loadVideoAnnotations()
-                except Exception as history_error:
-                    print(f"Note: Could not auto-load annotation history: {history_error}")
+                except Exception as historyError:
+                    print(f"Note: Could not auto-load annotation history: {historyError}")
                     # Fallback to showing a message
                     self.displayHistoryMessage("No annotation history found for this video.")
             
             # Draw timeline and load first frame
             self.drawTimeline()
             self.displayFrame(0)
-            self.updateFrameInfo()
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load video: {str(e)}")
@@ -687,8 +754,8 @@ class VideoSegmentEditor:
                 videoAnnotations = self.allAnnotations[self.videoName]
             else:
                 # Try matching by filename only
-                for video_path, annotations in self.allAnnotations.items():
-                    if os.path.basename(video_path) == self.videoName:
+                for videoPath, annotations in self.allAnnotations.items():
+                    if os.path.basename(videoPath) == self.videoName:
                         videoAnnotations = annotations
                         break
             
@@ -720,14 +787,14 @@ class VideoSegmentEditor:
             videoAnnotations = self.allAnnotations[self.videoName]
         else:
             # Try matching by filename only
-            current_filename = os.path.basename(self.videoName)
-            for video_path, annotations in self.allAnnotations.items():
-                if os.path.basename(video_path) == current_filename:
+            currentFilename = os.path.basename(self.videoName)
+            for videoPath, annotations in self.allAnnotations.items():
+                if os.path.basename(videoPath) == currentFilename:
                     videoAnnotations = annotations
                     break
         
         if not videoAnnotations:
-            shortcut_guide = (
+            shortcutGuide = (
                 "\n\nKeyboard Shortcuts:\n"
                 "  • Spacebar: Play/Pause segment\n"
                 "  • Enter: Replay segment\n"
@@ -736,7 +803,7 @@ class VideoSegmentEditor:
                 "  • Arrow Left: Previous segment\n"
                 "  • Arrow Right: Next segment\n"
             )
-            self.displayHistoryMessage(f"No annotations found for video: {self.videoName}{shortcut_guide}")
+            self.displayHistoryMessage(f"No annotations found for video: {self.videoName}{shortcutGuide}")
             return
         
         # Format and display the annotations
@@ -756,6 +823,17 @@ class VideoSegmentEditor:
             
             with open(summaryFile, 'r') as f:
                 self.allAnnotations = json.load(f)
+                
+            # DUPLICATE VALIDATION: Check for and clean any duplicate segments
+            programDir = os.path.expanduser("~")
+            rootDir = os.path.join(programDir, "smoke_detection_annotations")
+            duplicatesFound = self.validateNoDuplicateSegments(rootDir)
+            if duplicatesFound > 0:
+                print(f"Cleaned up {duplicatesFound} duplicate segments on startup")
+                
+            # Update the display including the ratio after loading annotations
+            if hasattr(self, 'updateSegmentInfo'):
+                self.updateSegmentInfo()
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load annotation history: {str(e)}")
@@ -774,7 +852,7 @@ class VideoSegmentEditor:
     def resetSegmentState(self):
         """Reset segment-related state"""
         self.segmentStart = 0
-        self.segmentEnd = min(Constants.SEGMENT_LENGTH - 1, self.totalFrames - 1)
+        self.segmentEnd = min(Constants.segmentLength - 1, self.totalFrames - 1)
         self.currentFrame = 0
         self.segmentWatched = False
         self.pausedFrame = None
@@ -836,63 +914,221 @@ class VideoSegmentEditor:
                                            fill='#1e1e1e', outline='')
         
         # Convert frames to time format (minutes:seconds)
-        current_time = self.frameToTime(self.currentFrame) if self.videoCap else "0:00"
-        total_time = self.frameToTime(self.totalFrames - 1) if self.videoCap and self.totalFrames > 0 else "0:00"
+        currentTime = self.frameToTime(self.currentFrame) if self.videoCap else "0:00"
+        totalTime = self.frameToTime(self.totalFrames - 1) if self.videoCap and self.totalFrames > 0 else "0:00"
         
         # Use wider margins to accommodate time labels outside
         timelineLeft = 80
-        timeline_right = canvasWidth - 80
-        timelineWidth = timeline_right - timelineLeft
+        timelineRight = canvasWidth - 80
+        timelineWidth = timelineRight - timelineLeft
         
         # Always show time labels
         self.timelineCanvas.create_text(timelineLeft - 10, canvasHeight // 2, 
-                                      text=f"{current_time}", 
+                                      text=f"{currentTime}", 
                                       fill='#4caf50', anchor='e', font=('Arial', 12, 'bold'))
 
-        self.timelineCanvas.create_text(timeline_right + 10, canvasHeight // 2, 
-                                      text=f"{total_time}", 
+        self.timelineCanvas.create_text(timelineRight + 10, canvasHeight // 2, 
+                                      text=f"{totalTime}", 
                                       fill='#4caf50', anchor='w', font=('Arial', 12, 'bold'))
 
         # Always draw basic timeline background
-        self.timelineCanvas.create_rectangle(timelineLeft, 10, timeline_right, canvasHeight - 10,
+        self.timelineCanvas.create_rectangle(timelineLeft, 10, timelineRight, canvasHeight - 10,
                                            fill='#444444', outline='#666666')
         
         # Only draw interactive timeline elements if video is loaded
         if self.videoCap and self.totalFrames > 0:
-            segment_start_x = max(timelineLeft, (self.segmentStart / self.totalFrames) * timelineWidth + timelineLeft)
-            segment_end_x = min(timeline_right, (self.segmentEnd / self.totalFrames) * timelineWidth + timelineLeft)
+            segmentStartX = max(timelineLeft, (self.segmentStart / self.totalFrames) * timelineWidth + timelineLeft)
+            segmentEndX = min(timelineRight, (self.segmentEnd / self.totalFrames) * timelineWidth + timelineLeft)
             
             # Draw selected segment
-            self.timelineCanvas.create_rectangle(segment_start_x, 5, segment_end_x, canvasHeight - 5,
+            self.timelineCanvas.create_rectangle(segmentStartX, 5, segmentEndX, canvasHeight - 5,
                                                fill='#4caf50', 
                                                outline='#2e7d32', width=2)
             
             # Add start and end markers at exact positions
-            self.timelineCanvas.create_line(segment_start_x, 5, segment_start_x, canvasHeight - 5,
+            self.timelineCanvas.create_line(segmentStartX, 5, segmentStartX, canvasHeight - 5,
                                           fill='#2e7d32', width=2)
-            self.timelineCanvas.create_line(segment_end_x, 5, segment_end_x, canvasHeight - 5,
+            self.timelineCanvas.create_line(segmentEndX, 5, segmentEndX, canvasHeight - 5,
                                           fill='#2e7d32', width=2)
             
         # Update segment info
         self.updateSegmentInfo()
 
     def extractSmokeStats(self):
-
-        smoke = 0
-        noSmoke = 0    
+        smokeTrain = smokeVal = 0
+        noSmokeTrain = noSmokeVal = 0    
         totalPerVideo = 0    
+        
         for videoFile, videoAnnotations in self.allAnnotations.items():
-                for ann in videoAnnotations.values():
-                    if videoFile == self.videoName:
-                        totalPerVideo += 1
-                    if isinstance(ann, dict) and 'hasSmoke' in ann:
-                        if ann['hasSmoke']:
-                            smoke += 1
+            for ann in videoAnnotations.values():
+                if videoFile == self.videoName:
+                    totalPerVideo += 1
+                if isinstance(ann, dict) and 'hasSmoke' in ann:
+                    datasetMode = ann.get('datasetMode', Config.datasetTrain)  # default to train for backward compatibility
+                    
+                    if ann['hasSmoke']:
+                        if datasetMode == Config.datasetTrain:
+                            smokeTrain += 1
                         else:
-                            noSmoke += 1
+                            smokeVal += 1
+                    else:
+                        if datasetMode == Config.datasetTrain:
+                            noSmokeTrain += 1
+                        else:
+                            noSmokeVal += 1
         
-        return smoke, noSmoke, totalPerVideo
+
+        return smokeTrain, noSmokeTrain,smokeVal, noSmokeVal, totalPerVideo
         
+    def calculateAnnotationRatio(self):
+        """Calculate and format the train:validation annotation ratio with enhanced readability"""
+        try:
+            # Get statistics for both modes
+            smokeTrain, noSmokeTrain, smokeVal, noSmokeVal, _ = self.extractSmokeStats()
+            
+            # Calculate totals
+            totalTrain = smokeTrain + noSmokeTrain
+            totalVal = smokeVal + noSmokeVal
+            totalAll = totalTrain + totalVal
+            
+            if totalAll == 0:
+                return "No data to analyze yet"
+            
+            # Calculate percentages
+            trainPercentage = (totalTrain / totalAll * 100) if totalAll > 0 else 0
+            valPercentage = (totalVal / totalAll * 100) if totalAll > 0 else 0
+            
+            # Enhanced format with actual counts and percentages
+            ratioText = f"Training: {trainPercentage:.1f}% ({totalTrain:,})\n"
+            ratioText += f"Validation: {valPercentage:.1f}% ({totalVal:,})\n"
+
+            return ratioText
+                   
+        except Exception as e:
+            print(f"Error calculating annotation ratio: {e}")
+            return "Error calculating dataset split"
+            
+    def removeSegmentFromOppositeDataset(self, segmentKey, currentDatasetMode, baseVideoName, rootDir):
+        """Remove the same segment from the opposite dataset mode to prevent duplicates"""
+        oppositeMode = Config.datasetVal if currentDatasetMode == Config.datasetTrain else Config.datasetTrain
+        
+        # Define directories for the opposite mode
+        oppositeImagesDir = os.path.join(rootDir, "images", oppositeMode)
+        oppositeLabelsDir = os.path.join(rootDir, "labels", oppositeMode)
+        
+        if not os.path.exists(oppositeImagesDir) or not os.path.exists(oppositeLabelsDir):
+            return  # Directories don't exist, nothing to clean
+        
+        # Remove all files for this segment in the opposite dataset mode
+        for annotationType in ['smoke', 'nosmoke']:
+            # Check both with and without dataset mode suffix (for different file naming patterns)
+            file_patterns = [
+                f"{annotationType}_{baseVideoName}_{segmentKey}",
+                f"{annotationType}_{baseVideoName}_{segmentKey}_{oppositeMode}"
+            ]
+            
+            for pattern in file_patterns:
+                # Remove image file
+                imageFile = os.path.join(oppositeImagesDir, f"{pattern}.png")
+                if os.path.exists(imageFile):
+                    os.remove(imageFile)
+                
+                # Remove label file
+                labelFile = os.path.join(oppositeLabelsDir, f"{pattern}.txt")
+                if os.path.exists(labelFile):
+                    os.remove(labelFile)
+                    
+        # Also remove from summary annotations
+        self.removeSegmentFromSummary(segmentKey, oppositeMode)
+        
+    def removeSegmentFromSummary(self, segmentKey, datasetMode):
+        """Remove segment entry from the summary annotations"""
+        if not hasattr(self, 'allAnnotations') or not self.videoName:
+            return
+            
+        videoAnnotations = self.allAnnotations.get(self.videoName, {})
+        segmentsToRemove = []
+        
+        # Find segments that match and are in the specified dataset mode
+        for existingSegmentKey, annotationData in videoAnnotations.items():
+            if (existingSegmentKey == segmentKey and 
+                isinstance(annotationData, dict) and 
+                annotationData.get('datasetMode') == datasetMode):
+                segmentsToRemove.append(existingSegmentKey)
+        
+        # Remove found segments
+        for segmentToRemove in segmentsToRemove:
+            del videoAnnotations[segmentToRemove]
+            
+    def validateNoDuplicateSegments(self, rootDir):
+        """Validate that no segment exists in both train and val datasets and clean if found"""
+        trainImagesDir = os.path.join(rootDir, "images", "train")
+        valImagesDir = os.path.join(rootDir, "images", "val")
+        
+        if not os.path.exists(trainImagesDir) or not os.path.exists(valImagesDir):
+            return 0  # Nothing to validate
+            
+        # Get all segments from train and val
+        trainSegments = set()
+        valSegments = set()
+        
+        # Extract segment identifiers from train
+        if os.path.exists(trainImagesDir):
+            for filename in os.listdir(trainImagesDir):
+                if filename.endswith('.png'):
+                    # Extract segment part: filename format is usually "smoke/nosmoke_videoname_XXXXXX_XXXXXX.png"
+                    parts = filename.replace('.png', '').split('_')
+                    if len(parts) >= 3:
+                        # Get the last two parts which should be the frame range
+                        segmentId = f"{parts[-2]}_{parts[-1]}"
+                        videoPart = '_'.join(parts[1:-2])  # Everything between smoke/nosmoke and frame range
+                        fullSegment = f"{videoPart}_{segmentId}"
+                        trainSegments.add(fullSegment)
+        
+        # Extract segment identifiers from val
+        if os.path.exists(valImagesDir):
+            for filename in os.listdir(valImagesDir):
+                if filename.endswith('.png'):
+                    parts = filename.replace('.png', '').split('_')
+                    if len(parts) >= 3:
+                        segmentId = f"{parts[-2]}_{parts[-1]}"
+                        videoPart = '_'.join(parts[1:-2])
+                        fullSegment = f"{videoPart}_{segmentId}"
+                        valSegments.add(fullSegment)
+        
+        # Find duplicates
+        duplicates = trainSegments.intersection(valSegments)
+        
+        if duplicates:
+            print(f"Found {len(duplicates)} duplicate segments between train and val:")
+            for duplicate in duplicates:
+                print(f"  Duplicate: {duplicate}")
+                # Remove from validation (keep in train by default)
+                self.removeDuplicateSegmentFiles(duplicate, "val", rootDir)
+                
+        return len(duplicates)
+        
+    def removeDuplicateSegmentFiles(self, segmentIdentifier, datasetMode, rootDir):
+        """Remove all files for a specific segment from a dataset mode"""
+        imagesDir = os.path.join(rootDir, "images", datasetMode)
+        labelsDir = os.path.join(rootDir, "labels", datasetMode)
+        
+        # Remove image files
+        if os.path.exists(imagesDir):
+            for filename in os.listdir(imagesDir):
+                if segmentIdentifier in filename and filename.endswith('.png'):
+                    filepath = os.path.join(imagesDir, filename)
+                    os.remove(filepath)
+                    print(f"    Removed duplicate image: {filename}")
+        
+        # Remove label files
+        if os.path.exists(labelsDir):
+            for filename in os.listdir(labelsDir):
+                if segmentIdentifier in filename and filename.endswith('.txt'):
+                    filepath = os.path.join(labelsDir, filename)
+                    os.remove(filepath)
+                    print(f"    Removed duplicate label: {filename}")
+    
     def updateSegmentInfo(self):
         """Update segment information display with smoke/no-smoke counts"""
         
@@ -903,27 +1139,41 @@ class VideoSegmentEditor:
         segmentText = (f"Frames {self.segmentStart}-{self.segmentEnd} "
                     f"({segmentFrames} frames, {segmentStartTime}-{segmentEndTime})")
         
-        smoke, noSmoke, annotationsPerVideo = self.extractSmokeStats()
-        # Update annotation text
+        smokeTrain, noSmokeTrain, smokeVal, noSmokeVal, annotationsPerVideo = self.extractSmokeStats()
+
+        smoke = smokeTrain + smokeVal
+        noSmoke = noSmokeTrain + noSmokeVal
+
         if smoke == 0 and noSmoke == 0:
-            annotationText = "No annotations yet"
+            annotationText = f"No annotations created yet\nStart annotating to build your dataset!"
         elif self.videoName == None:
-            annotationText = (f"Smoke: {smoke}, No Smoke: {noSmoke}")
+            annotationText = (f"Train dataset:\n")
+            annotationText += (f"Smoke: {smokeTrain:,}  |  No smoke: {noSmokeTrain:,}\n")
+            annotationText += (f"Validation dataset:\n")
+            annotationText += (f"Train: {smokeVal:,}  |  Validation: {noSmokeVal:,}")
         else:
-            annotationText = (f"Smoke: {smoke}, No Smoke: {noSmoke}\n"
-                                f"Annotations in this video: {annotationsPerVideo}")
+            annotationText = (f"Train dataset:\n")
+            annotationText += (f"Smoke: {smokeTrain:,}  |  No smoke: {noSmokeTrain:,}\n")
+            annotationText += (f"Validation dataset:\n")
+            annotationText += (f"Train: {smokeVal:,}  |  Validation: {noSmokeVal:,}\n")
+            annotationText += (f"This video: {annotationsPerVideo:,} annotations")
             
         # Right panel labels (if they exist)
         if hasattr(self, 'segmentInfoLabel'):
             self.segmentInfoLabel.config(text=segmentText)
         if hasattr(self, 'smokeInfoLabel'):
             self.smokeInfoLabel.config(text=annotationText)
+            
+        # Update annotation ratio label
+        if hasattr(self, 'annotationRatioLabel'):
+            ratioText = self.calculateAnnotationRatio()
+            self.annotationRatioLabel.config(text=ratioText)
 
     def resetHistorySelection(self):
         """Reset history selection to default color"""
         if hasattr(self, 'historyText') and self.lastClickedTag:
-            default_color = "#d4af37" if self.lastClickedWasSmoke else "#87ceeb"
-            self.historyText.tag_config(self.lastClickedTag, foreground=default_color, background="", underline=True)
+            defaultColor = "#d4af37" if self.lastClickedWasSmoke else "#87ceeb"
+            self.historyText.tag_config(self.lastClickedTag, foreground=defaultColor, background="", underline=True)
             self.lastClickedTag = None
             self.lastClickedWasSmoke = False
         
@@ -998,9 +1248,9 @@ class VideoSegmentEditor:
             return
             
         # Add a small delay to avoid too frequent updates during resize
-        if hasattr(self, '_resize_timer'):
-            self.root.after_cancel(self._resize_timer)
-        self._resize_timer = self.root.after(100, self.refreshVideoDisplay)
+        if hasattr(self, 'resizeTimer'):
+            self.root.after_cancel(self.resizeTimer)
+        self.resizeTimer = self.root.after(100, self.refreshVideoDisplay)
         
     def refreshVideoDisplay(self):
         """Refresh the current video frame display after canvas resize"""
@@ -1065,32 +1315,32 @@ class VideoSegmentEditor:
     def moveSegment10Back(self):
         """Move segment backward by 64 frames"""
         self.resetHistorySelection()
-        self.moveSegment(Constants.SMALL_MOVE, 'backward')
+        self.moveSegment(Constants.smallMove, 'backward')
 
     def moveSegment64Back(self):
         """Move segment backward by 64 frames"""
         self.resetHistorySelection()
-        self.moveSegment(Constants.MEDIUM_MOVE, 'backward')
+        self.moveSegment(Constants.mediumMove, 'backward')
         
     def moveSegment640Back(self):
         """Move segment backward by 640 frames"""
         self.resetHistorySelection()
-        self.moveSegment(Constants.LARGE_MOVE, 'backward')
+        self.moveSegment(Constants.largeMove, 'backward')
 
     def moveSegment10Forward(self):
         """Move segment forward by 64 frames"""
         self.resetHistorySelection()
-        self.moveSegment(Constants.SMALL_MOVE, 'forward')
+        self.moveSegment(Constants.smallMove, 'forward')
         
     def moveSegment64Forward(self):
         """Move segment forward by 64 frames"""
         self.resetHistorySelection()
-        self.moveSegment(Constants.MEDIUM_MOVE, 'forward')
+        self.moveSegment(Constants.mediumMove, 'forward')
         
     def moveSegment640Forward(self):
         """Move segment forward by 640 frames"""
         self.resetHistorySelection()
-        self.moveSegment(Constants.LARGE_MOVE, 'forward')
+        self.moveSegment(Constants.largeMove, 'forward')
     
         
     def displayFrame(self, frameNumber):
@@ -1108,7 +1358,6 @@ class VideoSegmentEditor:
                     del self.imageCache[frameNumber]
                 
                 self.displayVideoFrame(frame)
-                self.updateFrameInfo()
                 
                 # Store as last frame if it's the end of segment
                 if frameNumber == self.segmentEnd:
@@ -1130,7 +1379,7 @@ class VideoSegmentEditor:
             return None
         
         # Cache the frame if cache isn't too large
-        if len(self.frameCache) < Constants.MAX_CACHE_SIZE:
+        if len(self.frameCache) < Constants.maxCacheSize:
             self.frameCache[frameNumber] = frame.copy()
             # Also pre-process and cache the image to avoid cache miss warnings
             self.preProcessImageForDisplay(frame, frameNumber)
@@ -1154,17 +1403,17 @@ class VideoSegmentEditor:
         canvasHeight = self.videoCanvas.winfo_height()
         
         if canvasWidth <= 1 or canvasHeight <= 1:
-            canvasWidth, canvasHeight = Constants.SCALED_canvasWidth, Constants.SCALED_canvasHeight
+            canvasWidth, canvasHeight = Constants.scaledCanvasWidth, Constants.scaledCanvasHeight
         
         # Check if dimensions have changed significantly (more than 5 pixels)
-        dimensions_changed = (
+        dimensionsChanged = (
             self.canvasWidth is None or 
             self.canvasHeight is None or 
             abs(canvasWidth - self.canvasWidth) > 5 or 
             abs(canvasHeight - self.canvasHeight) > 5
         )
         
-        if dimensions_changed:
+        if dimensionsChanged:
             # Clear image cache when dimensions change to force re-processing
             if self.canvasWidth is not None:
                 self.imageCache.clear()  # Force re-processing of all cached imag
@@ -1304,22 +1553,22 @@ class VideoSegmentEditor:
             # Fallback positioning
             self.processingOverlay.place(in_=self.videoCanvas, relx=0.5, rely=0.5, anchor='center')
     
-    def updateProcessingStatus(self, status_text):
+    def updateProcessingStatus(self, statusText):
         """Update the status text in the processing overlay"""
         if hasattr(self, 'processingStatusLabel'):
-            self.processingStatusLabel.config(text=status_text)
+            self.processingStatusLabel.config(text=statusText)
             self.root.update_idletasks()  # Force UI update
     
-    def showProcessingResult(self, result_message, is_success=True):
+    def showProcessingResult(self, resultMessage, isSucces=True):
         """Show the result message on the processing overlay"""
         if hasattr(self, 'processingLabel') and hasattr(self, 'processingStatusLabel'):
             # Update colors based on success/failure
-            if is_success:
+            if isSucces:
                 self.processingLabel.config(text="Annotation Saved!", fg='#4caf50')
-                self.processingStatusLabel.config(text=result_message, fg='lightgreen')
+                self.processingStatusLabel.config(text=resultMessage, fg='lightgreen')
             else:
                 self.processingLabel.config(text="Error", fg='#f44336')
-                self.processingStatusLabel.config(text=result_message, fg='#ff9800')
+                self.processingStatusLabel.config(text=resultMessage, fg='#ff9800')
             
             self.root.update_idletasks()
 
@@ -1346,7 +1595,7 @@ class VideoSegmentEditor:
         self.loadingLabel.config(text=f"Loading segment frames{dots}")
         
         # Schedule next animation frame
-        self.loadingAnimationTimer = self.root.after(Constants.LOADING_ANIMATION_DELAY_MS, 
+        self.loadingAnimationTimer = self.root.after(Constants.loadingAnimationDelayMs, 
                                                     self.animateLoadingText)
     
     def preloadSegmentFrames(self):
@@ -1376,27 +1625,27 @@ class VideoSegmentEditor:
             self.isPreloading = False
             self.hideLoadingIndicator()
             
-    def preloadFramesBatch(self, startFrame, batch_index):
+    def preloadFramesBatch(self, startFrame, BatchIndex):
         """Preload frames in small batches to avoid UI blocking"""
         if not self.videoCap:
             self.isPreloading = False
             return
             
-        current_frame = startFrame + (batch_index * Constants.BATCH_SIZE)
+        currentFrame = startFrame + (BatchIndex * Constants.batchSize)
         
         # Stop if we've reached the end of the segment
-        if current_frame > self.segmentEnd:
+        if currentFrame > self.segmentEnd:
             self.isPreloading = False
             self.hideLoadingIndicator()
             return
             
         try:
-            self.loadFrameBatch(current_frame)
+            self.loadFrameBatch(currentFrame)
             
             # Continue with next batch if there are more frames to load
-            if current_frame + Constants.BATCH_SIZE <= self.segmentEnd:
-                self.root.after(Constants.PRELOAD_DELAY_MS, 
-                               lambda: self.preloadFramesBatch(startFrame, batch_index + 1))
+            if currentFrame + Constants.batchSize <= self.segmentEnd:
+                self.root.after(Constants.preloadDelayMs, 
+                               lambda: self.preloadFramesBatch(startFrame, BatchIndex + 1))
             else:
                 self.isPreloading = False
                 self.hideLoadingIndicator()
@@ -1406,14 +1655,14 @@ class VideoSegmentEditor:
             self.isPreloading = False
             self.hideLoadingIndicator()
             
-    def loadFrameBatch(self, current_frame):
+    def loadFrameBatch(self, currentFrame):
         """Load a batch of frames into cache"""
-        for i in range(Constants.BATCH_SIZE):
-            frameNum = current_frame + i
+        for i in range(Constants.batchSize):
+            frameNum = currentFrame + i
             if frameNum > self.segmentEnd or frameNum >= self.totalFrames:
                 break
                 
-            if frameNum not in self.frameCache and len(self.frameCache) < Constants.MAX_CACHE_SIZE:
+            if frameNum not in self.frameCache and len(self.frameCache) < Constants.maxCacheSize:
                 self.videoCap.set(cv2.CAP_PROP_POS_FRAMES, frameNum)
                 ret, frame = self.videoCap.read()
                 if ret:
@@ -1422,11 +1671,7 @@ class VideoSegmentEditor:
                     self.preProcessImageForDisplay(frame, frameNum)
                 else:
                     break
-            
-    def updateFrameInfo(self):
-        """Update frame information display"""
-        if self.videoCap:
-            self.frameInfoLabel.config(text=f"Frame: {self.currentFrame}/{self.totalFrames-1}")
+
             
     def togglePreviewPlayback(self):
         """Toggle preview playback in selection mode"""
@@ -1503,15 +1748,15 @@ class VideoSegmentEditor:
         targetFrame = min(targetFrame, self.segmentEnd)
 
         # Limit frame skipping to max 3 consecutive frames
-        if targetFrame > self.currentFrame + Constants.MAX_SKIPPED_FRAMES:
-            targetFrame = self.currentFrame + Constants.MAX_SKIPPED_FRAMES
+        if targetFrame > self.currentFrame + Constants.maxSkippedFrames:
+            targetFrame = self.currentFrame + Constants.maxSkippedFrames
 
         if targetFrame <= self.segmentEnd:
             frame = self.getCachedOrLoadFrame(targetFrame)
             if frame is not None:
-                display_start = time.time()
+                displayStart = time.time()
                 self.displayVideoFrame(frame)
-                displayTime = (time.time() - display_start) * 1000
+                displayTime = (time.time() - displayStart) * 1000
             else:
                 print(f"WARNING - Frame {self.currentFrame} not cached!")
                 displayTime = 0
@@ -1520,13 +1765,12 @@ class VideoSegmentEditor:
 
             # Update frame info and timeline for smooth user experience
             self.drawTimeline()
-            self.updateFrameInfo()
 
             # Adaptive timing compensation based on actual display time
-            delay = max(Constants.MIN_FRAME_DELAY_MS, self.getIdealFrameDelayMs() - int(displayTime))
+            delay = max(Constants.minFrameDelayMs, self.getIdealFrameDelayMs() - int(displayTime))
 
             # Periodic garbage collection to prevent buildup
-            if self.currentFrame % Constants.GC_INTERVAL_FRAMES == 0:
+            if self.currentFrame % Constants.gcIntervalFrames == 0:
                 gc.collect()
 
             if self.currentFrame >= self.segmentEnd:
@@ -1540,10 +1784,10 @@ class VideoSegmentEditor:
         
         if displayTime > idealDelay * 0.6:  # If display took more than 60% of ideal time
             # Reduce delay more aggressively to compensate
-            delay = max(Constants.MIN_FRAME_DELAY_MS, idealDelay - int(displayTime))
+            delay = max(Constants.minFrameDelayMs, idealDelay - int(displayTime))
         else:
             # Standard compensation
-            delay = max(Constants.MIN_FRAME_DELAY_MS, idealDelay - int(displayTime))
+            delay = max(Constants.minFrameDelayMs, idealDelay - int(displayTime))
             
         return delay
             
@@ -1656,7 +1900,7 @@ class VideoSegmentEditor:
             self.updateProcessingStatus("Saving annotation data...")
             self.root.after(200, lambda: self.continueAnnotationProcessing(hasSmoke))
         except Exception as e:
-            self.showProcessingResult(f"Error: {str(e)}", is_success=False)
+            self.showProcessingResult(f"Error: {str(e)}", isSucces=False)
     
     def continueAnnotationProcessing(self, hasSmoke):
         """Continue processing annotation"""
@@ -1667,10 +1911,10 @@ class VideoSegmentEditor:
             # Show success message
             smokeStatus = "SMOKE DETECTED" if hasSmoke else "NO SMOKE"
             resultMsg = f"Frames {self.segmentStart}-{self.segmentEnd} marked as {smokeStatus}"
-            self.showProcessingResult(resultMsg, is_success=True)
+            self.showProcessingResult(resultMsg, isSucces=True)
             
         except Exception as e:
-            self.showProcessingResult(f"Failed to save annotation: {str(e)}", is_success=False)
+            self.showProcessingResult(f"Failed to save annotation: {str(e)}", isSucces=False)
         
     def saveAnnotation(self, hasSmoke):
         """Save annotation for current segment in the annotations dictionary"""
@@ -1681,14 +1925,15 @@ class VideoSegmentEditor:
             if self.videoName not in self.annotations:
                 self.annotations[self.videoName] = {}
 
-            # Create segment key
+            # Create segment key with dataset mode
             segmentKey = f"{self.segmentStart:06d}_{self.segmentEnd:06d}"
             
-            # Store annotation data
+            # Store annotation data with dataset mode information
             self.annotations[self.videoName][segmentKey] = {
                 "startFrame": self.segmentStart,
                 "endFrame": self.segmentEnd,
                 "hasSmoke": hasSmoke,
+                "datasetMode": self.datasetMode,
             }
             
             # Update status
@@ -1698,20 +1943,36 @@ class VideoSegmentEditor:
             programDir = os.path.expanduser("~")
             baseVideoName = os.path.splitext(os.path.basename(self.videoName))[0]
             
-            # Create a centralized output directory for all YOLO annotations in program folder
-            yoloDir = os.path.join(programDir, "smoke_detection_annotations")
-            imagesDir = os.path.join(yoloDir, "images")
-            labelsDir = os.path.join(yoloDir, "labels")
+            # Create a centralized output directory with proper train/validation structure
+            rootDir = os.path.join(programDir, "smoke_detection_annotations")
+            imagesDir = os.path.join(rootDir, "images", self.datasetMode)  # images/train or images/val
+            labelsDir = os.path.join(rootDir, "labels", self.datasetMode)  # labels/train or labels/val
             
-            for directory in [yoloDir, imagesDir, labelsDir]:
-                if not os.path.exists(directory):
-                    os.makedirs(directory)
+            # Create the overall structure directories
+            for mode in [Config.datasetTrain, Config.datasetVal]:
+                modeImagesDir = os.path.join(rootDir, "images", mode)
+                modeLabelsDir = os.path.join(rootDir, "labels", mode)
+                
+                for directory in [modeImagesDir, modeLabelsDir]:
+                    if not os.path.exists(directory):
+                        os.makedirs(directory)
             
-            # Create unique filename with video name prefix
+            # Ensure root directory exists
+            if not os.path.exists(rootDir):
+                os.makedirs(rootDir)
+            
+            # Create unique filename with video name prefix and dataset mode
             uniqueSegmentKey = f"{'smoke' if hasSmoke else 'nosmoke'}_{baseVideoName}_{segmentKey}"
 
-            #delete file with oposite annotation if it exists
+            # DUPLICATE PREVENTION: Remove this segment from opposite dataset mode
+            self.updateProcessingStatus("Checking for duplicate segments...")
+            self.removeSegmentFromOppositeDataset(segmentKey, self.datasetMode, baseVideoName, rootDir)
+            
+            #delete file with opposite annotation if it exists (in current dataset mode)
             oppositeSegmentKey = f"{'nosmoke' if hasSmoke else 'smoke'}_{baseVideoName}_{segmentKey}"
+            oppositeLabelFile = os.path.join(labelsDir, f"{oppositeSegmentKey}.txt")
+            if os.path.exists(oppositeLabelFile):
+                os.remove(oppositeLabelFile)
 
             # Update status
             self.updateProcessingStatus("Generating temporal analysis image...")
@@ -1721,11 +1982,6 @@ class VideoSegmentEditor:
             
             # Update status
             self.updateProcessingStatus("Creating YOLO label file...")
-
-            oppositeLabelFile = os.path.join(labelsDir, f"{oppositeSegmentKey}.txt")
-
-            if os.path.exists(oppositeLabelFile):
-                os.remove(oppositeLabelFile)
             
             # Create YOLO format label file for CURRENT segment only
             labelFile = os.path.join(labelsDir, f"{uniqueSegmentKey}.txt")
@@ -1740,14 +1996,17 @@ class VideoSegmentEditor:
             self.updateProcessingStatus("Updating summary files...")
             
             # Update summary file with only current segment
-            self.updateSummaryFileWithCurrentSegment(yoloDir, uniqueSegmentKey, hasSmoke)
+            self.updateSummaryFileWithCurrentSegment(rootDir, uniqueSegmentKey, hasSmoke)
             
-            # Update class names file (only if it doesn't exist)
-            classesFile = os.path.join(yoloDir, Config.classesFile)
+            # Update class names file (create in root directory only)
+            classesFile = os.path.join(rootDir, Config.classesFile)
             if not os.path.exists(classesFile):
                 with open(classesFile, 'w') as f:
                     f.write("smoke\n")
                     f.write("no_smoke\n")
+            
+            # Create/update train.txt and val.txt files
+            self.createTrainValFiles(rootDir)
             
             # Final status update
             self.updateProcessingStatus("Finalizing annotation...")
@@ -1758,16 +2017,52 @@ class VideoSegmentEditor:
                 try:
                     self.loadAnnotationHistory()
                     self.loadVideoAnnotations()
-                except Exception as history_error:
-                    print(f"Note: Could not auto-reload history: {history_error}")
+                except Exception as historyError:
+                    print(f"Note: Could not auto-reload history: {historyError}")
             
         except Exception as e:
             print(f"Error saving annotation: {e}")
+    
+    
+    def createTrainValFiles(self, rootDir):
+        """Create train.txt and val.txt files with absolute paths to images"""
+        try:
+            trainImagesDir = os.path.join(rootDir, "images", "train")
+            valImagesDir = os.path.join(rootDir, "images", "val")
             
-    def updateSummaryFileWithCurrentSegment(self, yoloDir, uniqueSegmentKey, hasSmoke):
+            # Create train.txt
+            trainTxtPath = os.path.join(rootDir, "train.txt")
+            trainImages = []
+            if os.path.exists(trainImagesDir):
+                for filename in os.listdir(trainImagesDir):
+                    if filename.endswith('.png'):
+                        relativePath = f"./images/train/{filename}"
+                        trainImages.append(relativePath)
+            
+            with open(trainTxtPath, 'w') as f:
+                for imgPath in sorted(trainImages):
+                    f.write(f"{imgPath}\n")
+            
+            # Create val.txt
+            valTxtPath = os.path.join(rootDir, "val.txt")
+            valImages = []
+            if os.path.exists(valImagesDir):
+                for filename in os.listdir(valImagesDir):
+                    if filename.endswith('.png'):
+                        relativePath = f"./images/val/{filename}"
+                        valImages.append(relativePath)
+            
+            with open(valTxtPath, 'w') as f:
+                for imgPath in sorted(valImages):
+                    f.write(f"{imgPath}\n")
+                
+        except Exception as e:
+            print(f"Error creating train.txt/val.txt files: {e}")
+            
+    def updateSummaryFileWithCurrentSegment(self, rootDir, uniqueSegmentKey, hasSmoke):
         """Update summary file with only the current segment"""
         try:
-            summaryFile = os.path.join(yoloDir, Config.summaryFile)
+            summaryFile = os.path.join(rootDir, Config.summaryFile)
             
             # Load existing annotations if file exists
             allAnnotations = {}
@@ -1784,13 +2079,13 @@ class VideoSegmentEditor:
 
             # Add/update only the current segment annotation (preserve existing ones)
             if self.videoName in self.annotations:
-                current_videoAnnotations = self.annotations[self.videoName]
+                currentVideoAnnotations = self.annotations[self.videoName]
                 # Find the segment key that matches our current segment
-                for segmentKey, annotation_data in current_videoAnnotations.items():
-                    if (annotation_data.get('startFrame') == self.segmentStart and 
-                        annotation_data.get('endFrame') == self.segmentEnd):
+                for segmentKey, annotationData in currentVideoAnnotations.items():
+                    if (annotationData.get('startFrame') == self.segmentStart and 
+                        annotationData.get('endFrame') == self.segmentEnd):
                         # Update only this specific segment, preserve all others
-                        allAnnotations[self.videoName][segmentKey] = annotation_data
+                        allAnnotations[self.videoName][segmentKey] = annotationData
                         break
             
             # Save updated summary (preserves all existing annotations from all videos)
@@ -1879,11 +2174,11 @@ class VideoSegmentEditor:
         self.historyText.delete(1.0, tk.END)
         
         # Sort annotations by start frame
-        sorted_annotations = []
-        for segmentKey, annotation_data in annotations.items():
-            sorted_annotations.append((annotation_data.get('startFrame', 0), segmentKey, annotation_data))
+        sortedAnnotations = []
+        for segmentKey, annotationData in annotations.items():
+            sortedAnnotations.append((annotationData.get('startFrame', 0), segmentKey, annotationData))
         
-        sorted_annotations.sort(key=lambda x: x[0])
+        sortedAnnotations.sort(key=lambda x: x[0])
         
         # Display enhanced header with statistics
         header = f"Annotation History: {self.videoName}\n"
@@ -1894,25 +2189,27 @@ class VideoSegmentEditor:
         header += "  • Click any frame range below to jump to that segment\n\n"
         self.historyText.insert(tk.END, header)
         
-        if not sorted_annotations:
+        if not sortedAnnotations:
             # Enhanced empty state message
             emptyMsg = "No annotations found for this video yet.\n\n"
             self.historyText.insert(tk.END, emptyMsg)
         else:
             # Display each annotation with simplified formatting
-            for i, (startFrame, segmentKey, annotation_data) in enumerate(sorted_annotations, 1):
-                startFrame = annotation_data.get('startFrame', 0)
-                endFrame = annotation_data.get('endFrame', startFrame + 63)
-                hasSmoke = annotation_data.get('hasSmoke', False)
+            for i, (startFrame, segmentKey, annotationData) in enumerate(sortedAnnotations, 1):
+                startFrame = annotationData.get('startFrame', 0)
+                endFrame = annotationData.get('endFrame', startFrame + 63)
+                hasSmoke = annotationData.get('hasSmoke', False)
+                datasetMode = annotationData.get('datasetMode', 'train')  # Default to train for backward compatibility
                 
-                # Create clean entry with color coding
+                # Create clean entry with color coding and dataset mode
                 smokeStatus = "SMOKE" if hasSmoke else "NO SMOKE"
+                modeLabel = f"[{datasetMode.upper()}]"
                 
                 # Calculate time range for user convenience
                 startTime = self.frameToTime(startFrame) if hasattr(self, 'frameToTime') else f"{startFrame//1500}:{(startFrame%1500)//25:02d}"
                 endTime = self.frameToTime(endFrame) if hasattr(self, 'frameToTime') else f"{endFrame//1500}:{(endFrame%1500)//25:02d}"
                 
-                entry = f"{i:2d}. Frames {startFrame:06d}-{endFrame:06d} ({startTime}-{endTime}) | {smokeStatus}\n\n"
+                entry = f"{i:2d}. {modeLabel} Frames {startFrame:06d}-{endFrame:06d} ({startTime}-{endTime}) | {smokeStatus}\n\n"
                 
                 # Insert with tag for clicking
                 tagName = f"frame_{startFrame}"
@@ -1955,7 +2252,7 @@ class VideoSegmentEditor:
             
             # Calculate new segment position to include the target frame
             newSegmentStart = max(0, targetFrame)
-            newSegmentStart = min(newSegmentStart, self.totalFrames - Constants.SEGMENT_LENGTH)
+            newSegmentStart = min(newSegmentStart, self.totalFrames - Constants.segmentLength)
             
             # Update segment position
             self.updateSegmentPosition(newSegmentStart)
@@ -1992,19 +2289,19 @@ class VideoSegmentEditor:
         elif (key == 'left') and self.moveFinished:
             self.moveFinished = False
             # Cancel any pending timer
-            if hasattr(self, '_move_timer'):
-                self.root.after_cancel(self._move_timer)
+            if hasattr(self, 'moveTimer'):
+                self.root.after_cancel(self.moveTimer)
             self.moveSegment64Back()
             # Set a timer to re-enable moves after a short delay
-            self._move_timer = self.root.after(5, self.enableMoveFinished)
+            self.moveTimer = self.root.after(5, self.enableMoveFinished)
         elif (key == 'right') and self.moveFinished:
             self.moveFinished = False
             # Cancel any pending timer
-            if hasattr(self, '_move_timer'):
-                self.root.after_cancel(self._move_timer)
+            if hasattr(self, 'moveTimer'):
+                self.root.after_cancel(self.moveTimer)
             self.moveSegment64Forward()
             # Set a timer to re-enable moves after a short delay
-            self._move_timer = self.root.after(5, self.enableMoveFinished)
+            self.moveTimer = self.root.after(5, self.enableMoveFinished)
     
     def enableMoveFinished(self):
         """Re-enable segment moves after debounce delay"""
